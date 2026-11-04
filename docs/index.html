@@ -5,9 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Playables Tracker — что залетает на YouTube Playables</title>
 <meta name="robots" content="noindex">
-<link rel="stylesheet" href="style.css?v=9e974c7ab9">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="style.css?v=6601fcc465">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" defer></script>
-<script src="app.js?v=ab88cd262d" defer></script>
+<script src="app.js?v=5e73bdda37" defer></script>
 </head>
 <body>
 <div class="viz-root">
@@ -30,6 +35,7 @@
   <button data-tab="cmp" role="tab">⭐ Сравнение <span id="cmpCount" class="pill"></span></button>
 </nav>
 
+<details class="fbox" id="fbox"><summary>Фильтры <span id="fActive" class="pill"></span></summary>
 <section class="filters" id="filters">
   <label>Жанр <select id="fGenre"><option value="">все</option></select></label>
   <label>Возраст <select id="fAge">
@@ -48,9 +54,14 @@
     <option value="1000000">1M</option>
   </select></label>
   <label>Издатель <input id="fPub" list="pubList" placeholder="любой"><datalist id="pubList"></datalist></label>
-  <label class="chk"><input type="checkbox" id="fRemoved"> удалённые</label>
+  <label>Статус <select id="fStatus">
+    <option value="active">активные</option>
+    <option value="removed">удалённые из YouTube</option>
+    <option value="all">все</option>
+  </select></label>
   <span class="count" id="count"></span>
 </section>
+</details>
 
 <main id="view"></main>
 

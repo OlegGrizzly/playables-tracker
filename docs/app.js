@@ -69,7 +69,7 @@ function icon(g, size = 88) {
 }
 function gameCell(g) {
   const tags = (g.age != null && g.age <= 7 ? '<span class="tag">NEW</span>' : '') + (g.rm ? '<span class="tag rm">удалена</span>' : '');
-  return `<div class="gname">${icon(g)}<div><b>${esc(g.n)}${tags}</b><small>${esc(g.p || '—')}</small></div></div>`;
+  return `<div class="gname">${icon(g)}<div><b>${esc(g.n)}${tags}</b><small>${esc(g.p || '—')}<span class="sm-only">${g.g ? ' · ' + esc(g.g) : ''}${g.age != null ? ` · ${g.age} дн` : ''}</span></small></div></div>`;
 }
 function points(g) {
   const out = [];
@@ -95,28 +95,30 @@ function whyChips(g) {
 
 /* ---------- колонки ---------- */
 const COL = {
-  rank: { label: '#', nosort: true, html: (g, i) => i + 1 },
+  rank: { label: '#', cls: 'hide-sm', nosort: true, html: (g, i) => i + 1 },
   game: { label: 'Игра', cls: 'game', get: g => (g.n || '').toLowerCase(), html: gameCell },
   genre: { label: 'Жанр', cls: 'txt hide-sm', get: g => g.g || '', html: g => esc(g.g || '—') },
   pub: { label: 'Опубл.', cls: 'hide-sm', title: 'Дата публикации на YouTube', get: g => g.pub || '', html: g => fmtDate(g.pub) },
+  rm: { label: 'Удалена', title: 'Когда игру убрали из YouTube Playables', get: g => g.rm || '', html: g => g.rm ? fmtDate(g.rm) : '<span class="muted">—</span>' },
   added: { label: 'В каталоге', cls: 'hide-sm', title: 'Когда игра появилась в каталоге Playables (по playables.games / нашим снимкам)', get: g => g.ad || '', html: g => g.ad ? fmtDate(g.ad) : '<span class="muted">—</span>' },
-  age: { label: 'Возраст', get: g => g.age, html: g => ageTxt(g.age) },
+  age: { label: 'Возраст', cls: 'hide-sm', get: g => g.age, html: g => ageTxt(g.age) },
   plays: { label: 'Плеев', get: g => g.plays, html: g => fmt(g.plays) },
-  d1: { label: 'За сутки', get: g => g.d1, html: g => g.d1 == null ? '<span class="muted">—</span>' : fmtD(g.d1) },
-  rate: { label: 'В день', title: 'Средний прирост в день за ≤7 дней (≈ — оценка плеи/возраст)', get: g => g.rate, html: rateTxt },
-  growth: { label: 'Рост/нед', get: g => g.growth, html: g => growthHtml(g.growth) },
-  mom: { label: 'Ускорение', title: 'Темп 3 последних дней / темп 7 дней до них', get: g => g.mom, html: g => momHtml(g.mom) },
-  peer: { label: 'Ровесники', title: 'Насколько игра сильнее игр того же возраста', get: g => g.peer, html: g => topPct(g.peer) },
+  d1: { label: 'За сутки', cls: 'hide-sm', get: g => g.d1, html: g => g.d1 == null ? '<span class="muted">—</span>' : fmtD(g.d1) },
+  rate: { label: 'В день', short: '/день', title: 'Средний прирост в день за ≤7 дней (≈ — оценка плеи/возраст)', get: g => g.rate, html: rateTxt },
+  growth: { label: 'Рост/нед', cls: 'hide-sm', get: g => g.growth, html: g => growthHtml(g.growth) },
+  mom: { label: 'Ускорение', cls: 'hide-sm', title: 'Темп 3 последних дней / темп 7 дней до них', get: g => g.mom, html: g => momHtml(g.mom) },
+  peer: { label: 'Ровесники', short: 'Ровес.', title: 'Насколько игра сильнее игр того же возраста', get: g => g.peer, html: g => topPct(g.peer) },
   hot: { label: '🔥 Hot', get: g => g.hot, html: g => hotHtml(g.hot) },
   why: { label: 'Почему', cls: 'txt hide-sm', nosort: true, html: whyChips },
   spark: { label: '30 дн', nosort: true, cls: 'hide-sm', html: spark },
   D1: { label: 'D1', title: 'Плеев на 1-й день после публикации', get: g => g.at['1'], html: g => fmt(g.at['1']) },
-  D3: { label: 'D3', get: g => g.at['3'], html: g => fmt(g.at['3']) },
-  D7: { label: 'D7', get: g => g.at['7'], html: g => fmt(g.at['7']) },
+  D3: { label: 'D3', cls: 'hide-sm', get: g => g.at['3'], html: g => fmt(g.at['3']) },
+  D7: { label: 'D7', cls: 'hide-sm', get: g => g.at['7'], html: g => fmt(g.at['7']) },
 };
+COL.rateLg = { ...COL.rate, cls: 'hide-sm' }; // на «Новинках» на телефоне важнее D1 и ровесники
 const TAB_COLS = {
   hot: ['rank', 'game', 'genre', 'age', 'plays', 'rate', 'growth', 'mom', 'peer', 'hot', 'why', 'spark'],
-  new: ['rank', 'game', 'genre', 'pub', 'added', 'age', 'plays', 'D1', 'D3', 'D7', 'rate', 'peer', 'hot', 'spark'],
+  new: ['rank', 'game', 'genre', 'pub', 'added', 'age', 'plays', 'D1', 'D3', 'D7', 'rateLg', 'peer', 'hot', 'spark'],
   all: ['rank', 'game', 'genre', 'pub', 'added', 'age', 'plays', 'd1', 'rate', 'growth', 'mom', 'peer', 'hot', 'spark'],
   cmp: ['rank', 'game', 'genre', 'age', 'plays', 'rate', 'growth', 'mom', 'peer', 'hot'],
 };
@@ -129,14 +131,15 @@ function filters() {
     age: $('#fAge').value,
     min: +$('#fMin').value || 0,
     pub: $('#fPub').value.trim().toLowerCase(),
-    removed: $('#fRemoved').checked,
+    status: $('#fStatus').value,
   };
 }
 function applyFilters(list, f, { skipGenre = false, skipPub = false } = {}) {
   let ageLo = -1, ageHi = Infinity;
   if (f.age) [ageLo, ageHi] = f.age.split('-').map(Number);
   return list.filter(g => {
-    if (!f.removed && g.rm) return false;
+    if (f.status === 'active' && g.rm) return false;
+    if (f.status === 'removed' && !g.rm) return false;
     if (f.q && !(g.n || '').toLowerCase().includes(f.q) && !(g.p || '').toLowerCase().includes(f.q)) return false;
     if (!skipGenre && f.genre && g.g !== f.genre) return false;
     if (!skipPub && f.pub && (g.p || '').toLowerCase() !== f.pub) return false;
@@ -156,13 +159,19 @@ function sortList(list, key, dir, cols = COL) {
 }
 
 /* ---------- таблица ---------- */
-function tableHtml(tab, rows, cols, colDefs = COL, grouped = null, rowAttr = g => `data-id="${esc(g.id)}"`) {
-  const [sk, sd] = S.sort[tab];
+function withRm(cols, f) {
+  if (f.status === 'active') return cols;
+  const i = cols.indexOf('plays');
+  return [...cols.slice(0, i + 1), 'rm', ...cols.slice(i + 1)];
+}
+function tableHtml(tab, rows, cols, colDefs = COL, grouped = null, rowAttr = g => `data-id="${esc(g.id)}"`, sortOverride = null) {
+  const [sk, sd] = sortOverride || S.sort[tab];
   const th = cols.map(k => {
     const c = colDefs[k];
     const cls = [c.cls || '', c.nosort ? 'nosort' : '', sk === k ? 'sorted' : ''].join(' ');
     const ar = sk === k ? (sd < 0 ? ' ↓' : ' ↑') : '';
-    return `<th class="${cls}" data-k="${k}" ${c.title ? `title="${esc(c.title)}"` : ''}>${c.label}${ar}</th>`;
+    const label = c.short ? `<span class="lg-only">${c.label}</span><span class="sm-only">${c.short}</span>` : c.label;
+    return `<th class="${cls}" data-k="${k}" ${c.title ? `title="${esc(c.title)}"` : ''}>${label}${ar}</th>`;
   }).join('');
   let body = '';
   const row = (g, i) => `<tr ${rowAttr(g)}>${cols.map(k => `<td class="${colDefs[k].cls || ''}">${colDefs[k].html(g, i)}</td>`).join('')}</tr>`;
@@ -174,7 +183,7 @@ function tableHtml(tab, rows, cols, colDefs = COL, grouped = null, rowAttr = g =
   } else {
     body = rows.map(row).join('');
   }
-  return `<table class="t" data-tab="${tab}"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table>`;
+  return `<div class="tw"><table class="t" data-tab="${tab}"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function bindTable(root, tab) {
@@ -189,14 +198,14 @@ function bindTable(root, tab) {
 
 /* ---------- агрегаты (жанры / издатели) ---------- */
 const AGG_COL = {
-  rank: { label: '#', nosort: true, html: (r, i) => i + 1 },
+  rank: { label: '#', cls: 'hide-sm', nosort: true, html: (r, i) => i + 1 },
   name: { label: 'Название', cls: 'txt game', get: r => r.name.toLowerCase(), html: r => `<b>${esc(r.name)}</b>` },
   games: { label: 'Игр', get: r => r.games, html: r => r.games },
-  new30: { label: 'Новых за 30 дн', get: r => r.new30, html: r => r.new30 || '<span class="muted">0</span>' },
-  plays: { label: 'Плеев всего', get: r => r.plays, html: r => fmt(r.plays) },
+  new30: { label: 'Новых за 30 дн', cls: 'hide-sm', get: r => r.new30, html: r => r.new30 || '<span class="muted">0</span>' },
+  plays: { label: 'Плеев всего', cls: 'hide-sm', get: r => r.plays, html: r => fmt(r.plays) },
   rateSum: { label: 'Плеев в день', title: 'Сумма темпов игр (≈ при оценке)', get: r => r.rateSum, html: r => fmt(r.rateSum) },
-  perGame: { label: 'В день на игру', get: r => r.perGame, html: r => fmt(r.perGame) },
-  newPeer: { label: 'Новинки vs ровесники', title: 'Медианный перцентиль новинок (≤30 дн) среди ровесников', get: r => r.newPeer, html: r => r.newPeer == null ? '<span class="muted">—</span>' : topPct(r.newPeer) },
+  perGame: { label: 'В день на игру', cls: 'hide-sm', get: r => r.perGame, html: r => fmt(r.perGame) },
+  newPeer: { label: 'Новинки vs ровесники', cls: 'hide-sm', title: 'Медианный перцентиль новинок (≤30 дн) среди ровесников', get: r => r.newPeer, html: r => r.newPeer == null ? '<span class="muted">—</span>' : topPct(r.newPeer) },
   hot100: { label: 'В топ-100 Hot', get: r => r.hot100, html: r => r.hot100 || '<span class="muted">0</span>' },
   best: { label: 'Лидер сейчас', cls: 'txt hide-sm', nosort: true, html: r => r.best ? `<a href="#" data-open="${esc(r.best.id)}">${esc(r.best.n)}</a>` : '—' },
 };
@@ -295,9 +304,11 @@ function render() {
   let html = '', count = '';
 
   if (tab === 'hot' || tab === 'all') {
-    const rows = sortList(applyFilters(S.games, f), ...S.sort[tab]);
+    // у удалённых нет Hot — по умолчанию сортируем их по дате удаления
+    const sort = f.status === 'removed' && S.sort[tab][0] === 'hot' ? ['rm', -1] : S.sort[tab];
+    const rows = sortList(applyFilters(S.games, f), ...sort);
     count = `${rows.length} игр`;
-    html = tableHtml(tab, rows.slice(0, S.limit), TAB_COLS[tab]);
+    html = tableHtml(tab, rows.slice(0, S.limit), withRm(TAB_COLS[tab], f), COL, null, undefined, sort);
     if (rows.length > S.limit) html += `<button class="more" id="more">Показать ещё (${rows.length - S.limit})</button>`;
   } else if (tab === 'new') {
     const keyOf = g => (S.newBy === 'ad' ? g.ad || g.pub : g.pub) || null;
@@ -317,11 +328,11 @@ function render() {
       `${d === '—' ? 'Без даты' : fmtDate(d)} · ${items.length} игр${items.length ? ` · медиана плеев ${fmt(sortList(items, 'plays', 1)[Math.floor(items.length / 2)].plays)}` : ''}`,
       sortList(items, sk, sd),
     ]);
-    html = `<div class="filters" style="margin-top:0">Группировать:
+    html = `<div class="grpby">Группировать:
         <label><input type="radio" name="newBy" value="ad" ${S.newBy === 'ad' ? 'checked' : ''}> по появлению в каталоге</label>
         <label><input type="radio" name="newBy" value="pub" ${S.newBy === 'pub' ? 'checked' : ''}> по дате публикации</label>
         <span class="muted">${S.newBy === 'ad' ? 'как «Added» на playables.games; у старых игр без этой даты — дата публикации' : 'дата публикации на YouTube'}</span></div>`
-      + (list.length ? tableHtml('new', null, TAB_COLS.new, COL, grouped) : '<div class="empty">Нет новинок под фильтры</div>');
+      + (list.length ? tableHtml('new', null, withRm(TAB_COLS.new, f), COL, grouped) : '<div class="empty">Нет новинок под фильтры</div>');
   } else if (tab === 'genres' || tab === 'pubs') {
     const list = applyFilters(S.games, f, { skipGenre: tab === 'genres', skipPub: tab === 'pubs' });
     const rows = sortList(aggregate(list, tab === 'genres' ? g => g.g : g => g.p), ...S.sort[tab], AGG_COL);
@@ -384,6 +395,8 @@ function render() {
 
   view.innerHTML = html;
   $('#count').textContent = count;
+  const nAct = [f.genre, f.age, f.min, f.pub, f.status !== 'active'].filter(Boolean).length;
+  $('#fActive').textContent = nAct || '';
   bindTable(view, tab);
   view.querySelectorAll('tr[data-id]').forEach(tr => tr.addEventListener('click', () => openGame(tr.dataset.id)));
   view.querySelectorAll('a[data-open]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); openGame(a.dataset.open); }));
@@ -495,6 +508,7 @@ function setTab(tab) {
 /* ---------- запуск ---------- */
 async function init() {
   saveCmp();
+  if (matchMedia('(min-width: 721px)').matches) $('#fbox').open = true;
   let data;
   try {
     const r = await fetch('data.json', { cache: 'no-cache' });
@@ -529,7 +543,7 @@ async function init() {
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab); });
   let t;
   $('#q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { S.limit = PAGE; render(); }, 120); });
-  ['#fGenre', '#fAge', '#fMin', '#fRemoved'].forEach(s => $(s).addEventListener('change', () => { S.limit = PAGE; render(); }));
+  ['#fGenre', '#fAge', '#fMin', '#fStatus'].forEach(s => $(s).addEventListener('change', () => { S.limit = PAGE; render(); }));
   $('#fPub').addEventListener('change', () => { S.limit = PAGE; render(); });
   $('#fPub').addEventListener('input', () => { if (!$('#fPub').value) render(); });
   $('#dClose').addEventListener('click', closeGame);
