@@ -101,6 +101,11 @@ table.t { width: 100%; border-collapse: collapse; background: var(--surface-1); 
 .t td.txt, .t th.txt { text-align: left; }
 .t tbody tr { cursor: pointer; }
 .t tbody tr:hover { background: var(--surface-2); }
+/* игры из «Сравнения» */
+.t tbody tr.fav td { background: color-mix(in srgb, var(--series-1) 9%, var(--surface-1)); }
+.t tbody tr.fav:hover td { background: color-mix(in srgb, var(--series-1) 15%, var(--surface-1)); }
+.t tbody tr.fav td:first-child { box-shadow: inset 3px 0 0 var(--series-1); }
+.star { color: var(--series-1); margin-right: 4px; }
 .t tr.grp td { background: var(--surface-2); color: var(--text-secondary); font-weight: 600; text-align: left; cursor: default; }
 .gname { display: flex; gap: 10px; align-items: center; min-width: 220px; }
 .gname img { width: 36px; height: 36px; border-radius: 8px; flex: none; background: var(--surface-2); object-fit: cover; }
@@ -179,6 +184,7 @@ svg.spark { display: block; }
   .t .hide-sm { display: none; }
   .sm-only { display: inline; }
   .lg-only { display: none; }
+  .t tbody tr.fav td.game { box-shadow: inset 3px 0 0 var(--series-1); } /* колонка # скрыта */
   .fbox > summary { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; list-style: none; margin: 4px 0 8px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); font-weight: 600; }
   .fbox > summary::after { content: "▾"; color: var(--muted); }
   .fbox[open] > summary::after { content: "▴"; }

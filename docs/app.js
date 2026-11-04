@@ -88,7 +88,8 @@ function icon(g, size = 88) {
 }
 function gameCell(g) {
   const tags = (g.age != null && g.age <= 7 ? '<span class="tag">NEW</span>' : '') + (g.rm ? '<span class="tag rm">удалена</span>' : '');
-  return `<div class="gname">${icon(g)}<div><b>${esc(g.n)}${tags}</b><small>${esc(g.p || '—')}<span class="sm-only">${g.g ? ' · ' + esc(g.g) : ''}${g.age != null ? ` · ${g.age} дн` : ''}</span></small></div></div>`;
+  const star = S.cmp.includes(g.id) ? '<span class="star" title="В сравнении">★</span>' : '';
+  return `<div class="gname">${icon(g)}<div><b>${star}${esc(g.n)}${tags}</b><small>${esc(g.p || '—')}<span class="sm-only">${g.g ? ' · ' + esc(g.g) : ''}${g.age != null ? ` · ${g.age} дн` : ''}</span></small></div></div>`;
 }
 function points(g) {
   const out = [];
@@ -182,7 +183,7 @@ function withRm(cols, f) {
   const i = cols.indexOf('plays');
   return [...cols.slice(0, i + 1), 'rm', ...cols.slice(i + 1)];
 }
-function tableHtml(tab, rows, cols, colDefs = COL, grouped = null, rowAttr = g => `data-id="${esc(g.id)}"`, sortOverride = null) {
+function tableHtml(tab, rows, cols, colDefs = COL, grouped = null, rowAttr = g => `data-id="${esc(g.id)}"${S.cmp.includes(g.id) ? ' class="fav"' : ''}`, sortOverride = null) {
   const [sk, sd] = sortOverride || S.sort[tab];
   const th = cols.map(k => {
     const c = colDefs[k];
@@ -467,7 +468,7 @@ function openGame(id, push = true) {
     const i = S.cmp.indexOf(id);
     if (i >= 0) S.cmp.splice(i, 1);
     else { if (S.cmp.length >= MAX_CMP) S.cmp.shift(); S.cmp.push(id); }
-    saveCmp(); openGame(id, false); if (S.tab === 'cmp') render();
+    saveCmp(); openGame(id, false); render(); // обновить подсветку в списке
   });
   if (!window.Chart) return;
   S.charts.push(ageChart($('#dAge'), [g], dr));
@@ -539,7 +540,7 @@ async function init() {
   if (n < 11) {
     const w = $('#warn');
     w.hidden = false;
-    w.innerHTML = `<b>История копится: ${n} ${n === 1 ? 'снимок' : 'снимка(ов)'}.</b> «В день» считается по реальному приросту между снимками; YouTube округляет плеи, поэтому у больших игр темп пока грубый («&lt;1M» — число за день не изменилось). Окно до 7 дней сделает его точнее, ускорение появится примерно через 10 дней. Сравнение с ровесниками работает сразу.`;
+    w.innerHTML = `<b>История копится: ${n} ${plural(n, 'снимок', 'снимка', 'снимков')}.</b> «В день» считается по реальному приросту между снимками; YouTube округляет плеи, поэтому у больших игр темп пока грубый: <b>&lt;1M</b> значит, что число за день не изменилось. Окно до 7 дней сделает его точнее, ускорение появится примерно через 10 дней. Сравнение с ровесниками работает сразу.`;
   }
   $('#foot').textContent = `Источник: playables.games (публичный каталог YouTube Playables). Веса Hot: темп ${data.weights.rate}, ровесники ${data.weights.peer}, ускорение ${data.weights.mom}.`;
 
