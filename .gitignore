@@ -2,4 +2,3 @@ __pycache__/
 *.pyc
 .playwright-mcp/
 .DS_Store
-probe_out/
