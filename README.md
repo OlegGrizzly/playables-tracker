@@ -72,3 +72,42 @@ cd docs && python3 -m http.server 8000   # http://localhost:8000
 - История начинается с первого запуска — прошлые дни взять неоткуда.
 - Мы зависим от вёрстки playables.games: если формат `const DATA` изменится, сбор упадёт
   (GitHub пришлёт письмо о падении workflow), а пустой снимок записан не будет.
+
+## Запасной источник: YouTube напрямую
+
+Если playables.games перестанет работать или сменит формат, данные можно брать
+у самого YouTube. Проверено разовым запуском из GitHub Actions 2026-11-04
+(код проверки удалён, здесь — только выводы).
+
+**Что работает**
+
+- Нужен регион, где доступен Playables (US, UK, CA, AU, IN, MY, TR, ЕС).
+  Из России YouTube отвечает «Игротека недоступна в этой стране»; раннеры
+  GitHub Actions находятся в США — с них работает.
+- `GET https://www.youtube.com/playables?gl=US&hl=en` (cookie `SOCS=CAI`, чтобы
+  не было окна согласия) — в HTML есть `ytInitialData` с первыми ~60 играми и
+  `ytcfg` (`INNERTUBE_API_KEY`, `INNERTUBE_CLIENT_VERSION`, `VISITOR_DATA`).
+- Остальной каталог — `POST /youtubei/v1/browse` с `browseId: FEmini_app_destination`
+  и дальше по `continuationCommand.token`, ~60 игр за запрос
+  (≈ 35 запросов на весь каталог из ~2100 игр).
+
+**Что есть в карточке игры** (`miniGameCardViewModel`)
+
+| Поле | Пример |
+|---|---|
+| `title` | `2 Player Battle` |
+| `metadataText` | `6.2M plays` — округлено |
+| `accessibilityText` | `2 Player Battle - 6.2 million plays - play Playable` — тоже округлено |
+| `onTap...url` | `/playables/<id>` — тот же id, что у нас |
+| `image.sources` | иконка |
+| попап «Game info» (`overflowButton...`) | описание, жанр, **Developer** и **Publisher** отдельно, **Publish date** |
+
+**Выводы**
+
+- Точных чисел плеев YouTube не отдаёт — округление то же, что у playables.games.
+- Данные YouTube свежее (обновляются постоянно, а не раз в сутки):
+  2 Player Battle на YouTube 6.2M, в суточном снимке playables.games — 6.1M.
+- Developer и Publisher у YouTube раздельные (у playables.games — одно имя).
+- Минусы: это внутренний неофициальный API — формат может поменяться без
+  предупреждения, запросы могут начать блокировать, сбор, вероятно, противоречит
+  условиям использования YouTube. Поэтому основной источник — playables.games.
