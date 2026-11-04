@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playables Tracker — что залетает на YouTube Playables</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<div class="viz-root">
+<header class="top">
+  <div class="brand">
+    <h1>Playables Tracker</h1>
+    <div class="sub" id="meta">загрузка…</div>
+  </div>
+  <input id="q" type="search" placeholder="Поиск по игре или издателю…" autocomplete="off" aria-label="Поиск">
+</header>
+
+<div id="warn" class="warn" hidden></div>
+
+<nav class="tabs" id="tabs" role="tablist">
+  <button data-tab="hot" role="tab">🔥 Залетает</button>
+  <button data-tab="new" role="tab">🆕 Новинки</button>
+  <button data-tab="all" role="tab">📋 Все игры</button>
+  <button data-tab="genres" role="tab">🧩 Жанры</button>
+  <button data-tab="pubs" role="tab">🏢 Издатели</button>
+  <button data-tab="cmp" role="tab">⭐ Сравнение <span id="cmpCount" class="pill"></span></button>
+</nav>
+
+<section class="filters" id="filters">
+  <label>Жанр <select id="fGenre"><option value="">все</option></select></label>
+  <label>Возраст <select id="fAge">
+    <option value="">любой</option>
+    <option value="0-3">≤ 3 дн</option>
+    <option value="0-7">≤ 7 дн</option>
+    <option value="0-30">≤ 30 дн</option>
+    <option value="0-90">≤ 90 дн</option>
+    <option value="91-100000">старше 90 дн</option>
+  </select></label>
+  <label>Плеев от <select id="fMin">
+    <option value="0">0</option>
+    <option value="1000">1K</option>
+    <option value="10000">10K</option>
+    <option value="100000">100K</option>
+    <option value="1000000">1M</option>
+  </select></label>
+  <label>Издатель <input id="fPub" list="pubList" placeholder="любой"><datalist id="pubList"></datalist></label>
+  <label class="chk"><input type="checkbox" id="fRemoved"> удалённые</label>
+  <span class="count" id="count"></span>
+</section>
+
+<main id="view"></main>
+
+<details class="help">
+  <summary>Как считаются метрики</summary>
+  <div class="helpbody">
+    <p><b>Источник.</b> Раз в несколько часов GitHub Actions скачивает каталог с playables.games (он, в свою очередь, берёт числа из YouTube) и сохраняет снимок «игра → плеи» на дату данных. История — только с момента запуска трекера.</p>
+    <p><b>Округление.</b> YouTube показывает плеи округлёнными: до 1K — точно, 1K–10K — шаг 100, до 1M — шаг 1K, до 10M — шаг 100K, дальше — шаг 1M. У больших игр дневной прирост «ступенчатый», поэтому темп считается за окно до 7 дней.</p>
+    <p><b>В день</b> — средний прирост плеев в день за последние ≤ 7 дней. Пока истории нет или прирост меньше шага округления — оценка «плеи / возраст» (помечена ≈).</p>
+    <p><b>Рост/нед</b> — недельный прирост в процентах к числу плеев неделю назад.</p>
+    <p><b>Ускорение</b> — темп за последние 3 дня, делённый на темп за 7 дней до них. ×1.5 — разгоняется, ×0.5 — затухает. Нужно ≥ 10 дней истории.</p>
+    <p><b>Ровесники</b> — насколько игра сильнее игр того же возраста: сравниваем «плеи в день жизни» со всеми играми, которые были в том же возрасте (по всем снимкам). «топ 5%» — лучше 95% ровесников. Главный индикатор для новинок.</p>
+    <p><b>🔥 Hot</b> (0–100) = 45% × перцентиль темпа + 35% × ровесники + 20% × перцентиль ускорения. Неизвестная часть считается нейтральной (0.5).</p>
+    <p><b>D1 / D3 / D7</b> — сколько было плеев на 1/3/7-й день после публикации (если снимок попал на этот день).</p>
+  </div>
+</details>
+
+<footer class="foot" id="foot"></footer>
+</div>
+
+<aside id="drawer" class="drawer" hidden aria-modal="true" role="dialog">
+  <div class="drawer-in">
+    <button class="close" id="dClose" aria-label="Закрыть">✕</button>
+    <div id="dBody"></div>
+  </div>
+</aside>
+<div id="tip" class="tip" hidden></div>
+</body>
+</html>
