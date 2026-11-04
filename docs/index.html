@@ -10,9 +10,9 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
-<link rel="stylesheet" href="style.css?v=60c0cccd73">
+<link rel="stylesheet" href="style.css?v=13d5cc0854">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" defer></script>
-<script src="app.js?v=53b8053b26" defer></script>
+<script src="app.js?v=551bd5dc34" defer></script>
 </head>
 <body>
 <div class="viz-root">
@@ -35,7 +35,7 @@
   <button data-tab="cmp" role="tab">⭐ Сравнение <span id="cmpCount" class="pill"></span></button>
 </nav>
 
-<details class="fbox" id="fbox"><summary>Фильтры и сортировка <span id="fActive" class="pill"></span></summary>
+<details class="fbox" id="fbox"><summary>Фильтры <span id="fActive" class="pill"></span></summary>
 <section class="filters" id="filters">
   <label>Жанр <select id="fGenre"><option value="">все</option></select></label>
   <label>Возраст <select id="fAge">
@@ -58,19 +58,6 @@
     <option value="active">активные</option>
     <option value="removed">удалённые из YouTube</option>
     <option value="all">все</option>
-  </select></label>
-  <label id="fSortWrap">Сортировка <select id="fSort">
-    <option value="hot:-1">🔥 Hot</option>
-    <option value="rate:-1">В день</option>
-    <option value="plays:-1">Плеев всего</option>
-    <option value="pub:-1">Дата публикации: новые</option>
-    <option value="pub:1">Дата публикации: старые</option>
-    <option value="growth:-1">Рост за неделю</option>
-    <option value="peer:-1">Ровесники</option>
-    <option value="d1:-1">За сутки</option>
-    <option value="mom:-1">Ускорение</option>
-    <option value="game:1">Название А–Я</option>
-    <option value="" hidden>—</option>
   </select></label>
   <span class="count" id="count"></span>
 </section>
