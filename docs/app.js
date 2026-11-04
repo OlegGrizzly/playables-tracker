@@ -123,7 +123,7 @@ const COL = {
   age: { label: 'Возраст', cls: 'hide-sm', get: g => g.age, html: g => ageTxt(g.age) },
   plays: { label: 'Плеев', get: g => g.plays, html: g => fmt(g.plays) },
   d1: { label: 'За сутки', cls: 'hide-sm', get: g => g.d1, html: g => g.d1 == null ? '<span class="muted">—</span>' : fmtD(g.d1) },
-  rate: { label: 'В день', short: '/день', title: 'Средний прирост в день за ≤7 дней. «<X» — число не изменилось, темп меньше шага округления; ≈ — оценка плеи/возраст (нет 2 снимков)', get: rateSortKey, html: rateTxt },
+  rate: { label: 'В день', short: '/день', title: 'Средний прирост в день за ≤7 дней. «<X» — число не изменилось, темп меньше шага округления; ≈ — оценка плеи/возраст (нет 2 снимков)', get: rateSortKey, html: g => g.rate == null ? '—' : `<span class="rt" title="${esc(rateNote(g))}">${rateTxt(g)}</span>` },
   growth: { label: 'Рост/нед', cls: 'hide-sm', get: g => g.growth, html: g => growthHtml(g.growth) },
   mom: { label: 'Ускорение', cls: 'hide-sm', title: 'Темп 3 последних дней / темп 7 дней до них', get: g => g.mom, html: g => momHtml(g.mom) },
   peer: { label: 'Ровесники', short: 'Ровес.', title: 'Насколько игра сильнее игр того же возраста', get: g => g.peer, html: g => topPct(g.peer) },

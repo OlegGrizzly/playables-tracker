@@ -206,3 +206,4 @@ svg.spark { display: block; }
   .chartbox { height: 200px; }
   .chartbox.tall { height: 260px; }
 }
+.rt { cursor: help; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
