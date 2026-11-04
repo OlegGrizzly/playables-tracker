@@ -33,7 +33,6 @@ ROOT = Path(__file__).resolve().parent.parent
 # Корзины возраста (дни, левая граница включительно) для сравнения с ровесниками.
 AGE_EDGES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 17, 21, 25, 30, 35, 42, 50, 60,
              75, 90, 120, 150, 180, 240, 300, 365, 500, 730, 100000]
-CURVE_MAX_AGE = 365
 MIN_PEERS = 10
 AT_AGES = (1, 3, 7, 14, 30)
 W_RATE, W_PEER, W_MOM = 0.45, 0.35, 0.20
@@ -120,6 +119,7 @@ def build(data_dir: Path) -> dict:
     # По каждой игре и корзине берём одно (самое позднее) наблюдение,
     # чтобы игры с длинной историей не перевешивали.
     bucket_obs: dict[int, dict[str, float]] = {}
+    bucket_age: dict[int, dict[str, int]] = {}  # возраст того же наблюдения — для кривой
     for gid, series in obs.items():
         pub = meta.get(gid, {}).get("published")
         if not pub:
@@ -129,7 +129,9 @@ def build(data_dir: Path) -> dict:
             age = (day - pub_d).days
             if age < 0:
                 continue
-            bucket_obs.setdefault(age_bucket(age), {})[gid] = per_day(plays, age)
+            b = age_bucket(age)
+            bucket_obs.setdefault(b, {})[gid] = per_day(plays, age)
+            bucket_age.setdefault(b, {})[gid] = age
     bucket_sorted = {b: sorted(v.values()) for b, v in bucket_obs.items()}
 
     def peer_pct(gid: str, age: int, plays: int):
@@ -153,11 +155,15 @@ def build(data_dir: Path) -> dict:
         f, c = math.floor(k), math.ceil(k)
         return vals[f] + (vals[c] - vals[f]) * (k - f)
 
+    # Одна точка на корзину возраста (в медианном возрасте её игр): без «пилы»
+    # внутри корзин и для всех возрастов, включая самые старые игры.
     curve = {"age": [], "p25": [], "p50": [], "p75": [], "p90": [], "n": []}
-    for a in range(0, CURVE_MAX_AGE + 1):
-        vals = bucket_sorted.get(age_bucket(a)) or []
+    for b in sorted(bucket_sorted):
+        vals = bucket_sorted[b]
         if len(vals) < MIN_PEERS:
             continue
+        ages = sorted(bucket_age[b].values())
+        a = ages[len(ages) // 2]
         mult = max(a, 1)
         curve["age"].append(a)
         curve["n"].append(len(vals))

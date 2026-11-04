@@ -207,3 +207,11 @@ svg.spark { display: block; }
   .chartbox.tall { height: 260px; }
 }
 .rt { cursor: help; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
+.tip[hidden] { display: none; }
+.tip { min-width: 240px; max-width: 320px; padding: 10px 12px; }
+.tip .tt { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+.tip .tr { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; padding: 2px 0; }
+.tip .tr span { color: var(--text-secondary); }
+.tip .tr b { text-align: right; font-variant-numeric: tabular-nums; }
+.tip .tr small { grid-column: 1 / -1; color: var(--muted); font-size: 11px; margin-top: -1px; }
+.tip .tsub { margin: 8px 0 2px; padding-top: 6px; border-top: 1px solid var(--grid); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }

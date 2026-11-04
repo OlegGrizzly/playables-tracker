@@ -63,6 +63,29 @@ function rateSortKey(g) {
   if (g.rate == null) return null;
   return g.lt ? -1e12 + (g.prec || 0) : g.rate;
 }
+// Карточка при наведении на «в день»: откуда число и с чем его сравнить
+function rateTipHtml(g) {
+  const pts = points(g);
+  const deltas = [];
+  for (let i = 1; i < pts.length; i++) {
+    const gap = toDay(pts[i].date) - toDay(pts[i - 1].date);
+    if (gap > 0) deltas.push({ date: pts[i].date, v: (pts[i].v - pts[i - 1].v) / gap, gap });
+  }
+  const life = g.age != null ? g.plays / Math.max(g.age, 1) : null;
+  const row = (l, v, s = '') => `<div class="tr"><span>${l}</span><b>${v}</b>${s ? `<small>${s}</small>` : ''}</div>`;
+  let h = `<div class="tt">${esc(g.n)}</div>`;
+  h += row('В день', rateTxt(g), esc(rateNote(g)));
+  h += row('За последние сутки', g.d1 == null ? '—' : fmtD(g.d1), g.d1 == null ? 'нет снимка за вчера' : `шаг округления ${fmt(g.q)}`);
+  if (g.growth != null) h += row('Рост за неделю', `${g.growth > 0 ? '+' : ''}${g.growth.toFixed(1)}%`);
+  h += row('Среднее за всю жизнь', life == null ? '—' : `${fmt(life)}/день`, life == null ? '' : `${fmt(g.plays)} за ${g.age} дн`);
+  if (deltas.length) {
+    h += `<div class="tsub">Прирост по дням</div>`;
+    h += deltas.slice(-7).reverse().map(d => row(fmtDate(d.date, false), d.v > 0 ? '+' + fmt(d.v) : (d.v === 0 ? '0' : fmt(d.v)), d.gap > 1 ? `в среднем за ${d.gap} дн` : '')).join('');
+  } else {
+    h += `<div class="tsub muted">История по дням появится со 2-го снимка</div>`;
+  }
+  return h;
+}
 function rateNote(g) {
   if (g.est) return 'оценка: плеи / возраст (нет 2 снимков)';
   if (g.lt) return `за ${g.span} дн число не изменилось — прирост меньше шага округления YouTube (${fmt(g.q)})`;
@@ -123,7 +146,7 @@ const COL = {
   age: { label: 'Возраст', cls: 'hide-sm', get: g => g.age, html: g => ageTxt(g.age) },
   plays: { label: 'Плеев', get: g => g.plays, html: g => fmt(g.plays) },
   d1: { label: 'За сутки', cls: 'hide-sm', get: g => g.d1, html: g => g.d1 == null ? '<span class="muted">—</span>' : fmtD(g.d1) },
-  rate: { label: 'В день', short: '/день', title: 'Средний прирост в день за ≤7 дней. «<X» — число не изменилось, темп меньше шага округления; ≈ — оценка плеи/возраст (нет 2 снимков)', get: rateSortKey, html: g => g.rate == null ? '—' : `<span class="rt" title="${esc(rateNote(g))}">${rateTxt(g)}</span>` },
+  rate: { label: 'В день', short: '/день', title: 'Средний прирост в день за ≤7 дней. «<X» — число не изменилось, темп меньше шага округления; ≈ — оценка плеи/возраст (нет 2 снимков)', get: rateSortKey, html: g => g.rate == null ? '—' : `<span class="rt" aria-label="${esc(rateNote(g))}">${rateTxt(g)}</span>` },
   growth: { label: 'Рост/нед', cls: 'hide-sm', get: g => g.growth, html: g => growthHtml(g.growth) },
   mom: { label: 'Ускорение', cls: 'hide-sm', title: 'Темп 3 последних дней / темп 7 дней до них', get: g => g.mom, html: g => momHtml(g.mom) },
   peer: { label: 'Ровесники', short: 'Ровес.', title: 'Насколько игра сильнее игр того же возраста', get: g => g.peer, html: g => topPct(g.peer) },
@@ -251,6 +274,13 @@ function aggregate(list, keyFn) {
 /* ---------- графики ---------- */
 function cssVar(name, el = $('.viz-root')) { return getComputedStyle(el).getPropertyValue(name).trim(); }
 function seriesColors(el) { return [1, 2, 3, 4].map(i => cssVar(`--series-${i}`, el)); }
+function axisFmt(v, step) {
+  const a = Math.abs(v);
+  const unit = a >= 1e9 ? 1e9 : a >= 1e6 ? 1e6 : a >= 1e3 ? 1e3 : 1;
+  const suf = { 1e9: 'B', 1e6: 'M', 1e3: 'K', 1: '' }[unit];
+  const dec = step > 0 ? Math.min(3, Math.max(0, Math.ceil(-Math.log10(step / unit) - 1e-9))) : 0;
+  return String(Number((v / unit).toFixed(dec))) + suf; // Number() убирает хвостовые нули
+}
 function chartBase(el) {
   const muted = cssVar('--muted', el), grid = cssVar('--grid', el), axis = cssVar('--axis', el), txt = cssVar('--text-primary', el), surf = cssVar('--surface-1', el), border = cssVar('--border', el);
   Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -269,7 +299,7 @@ function chartBase(el) {
     },
     scales: {
       x: { grid: { display: false }, border: { color: axis }, ticks: { color: muted, maxRotation: 0, autoSkipPadding: 12 } },
-      y: { grid: { color: grid }, border: { display: false }, ticks: { color: muted, callback: v => fmt(v) } },
+      y: { grid: { color: grid }, border: { display: false }, ticks: { color: muted, callback: (v, i, t) => axisFmt(v, t.length > 1 ? Math.abs(t[1].value - t[0].value) : 0) } },
     },
   };
 }
@@ -277,7 +307,10 @@ function destroy(arr) { while (arr.length) arr.pop().destroy(); }
 function noHistory(box, n) { box.innerHTML = `<div class="empty">Нужно минимум 2 снимка — сейчас ${n}. График появится после следующего сбора.</div>`; }
 
 function peerBandDatasets(el, maxAge) {
-  const c = S.data.curve, idx = c.age.map((a, i) => i).filter(i => c.age[i] <= maxAge);
+  // точки кривой — по одной на возрастную группу; берём и первую за краем, чтобы линия доходила до края графика
+  const c = S.data.curve;
+  const last = c.age.findIndex(a => a > maxAge);
+  const idx = c.age.map((a, i) => i).filter(i => last === -1 || i <= last);
   const pts = k => idx.map(i => ({ x: c.age[i], y: Math.max(1, c[k][i]) }));
   const muted = cssVar('--muted', el), grid = cssVar('--grid', el);
   return [
@@ -562,6 +595,25 @@ async function init() {
   $('#fPub').addEventListener('input', () => { if (!$('#fPub').value) render(); });
   $('#dClose').addEventListener('click', closeGame);
   $('#drawer').addEventListener('click', e => { if (e.target.id === 'drawer') closeGame(); });
+  // всплывающая карточка для «в день»
+  const tip = $('#tip');
+  const placeTip = e => {
+    const r = tip.getBoundingClientRect();
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+    if (y + r.height > innerHeight - 8) y = Math.max(8, innerHeight - r.height - 8);
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  };
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('.rt');
+    if (!el) return;
+    const g = S.byId.get(el.closest('tr[data-id]')?.dataset.id);
+    if (!g) return;
+    tip.innerHTML = rateTipHtml(g); tip.hidden = false; placeTip(e);
+  });
+  document.addEventListener('mousemove', e => { if (!tip.hidden && e.target.closest('.rt')) placeTip(e); });
+  document.addEventListener('mouseout', e => { if (e.target.closest('.rt') && !e.relatedTarget?.closest?.('.rt')) tip.hidden = true; });
+  addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
   addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#drawer').hidden) closeGame(); });
   addEventListener('hashchange', () => {
     const hh = readHash();
