@@ -50,8 +50,10 @@
 2. Написать боту любое сообщение, затем открыть `https://api.telegram.org/bot<ТОКЕН>/getUpdates`
    и взять `chat.id` (для группы/канала — добавить бота туда).
 3. В репозитории: Settings → Secrets and variables → Actions:
-   - Secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+   - Secrets: `TELEGRAM_BOT_TOKEN`; `TELEGRAM_CHAT_ID` — в Secrets или Variables
    - Variables: `DASHBOARD_URL` = адрес GitHub Pages (чтобы ссылки вели в карточку игры)
+
+Проверка: Actions → «Сбор статистики Playables» → Run workflow → галочка «Только отправить тестовое сообщение».
 
 Первый запуск алертов ничего не отправляет — только запоминает текущее состояние, чтобы не прислать сразу сотню сообщений.
 

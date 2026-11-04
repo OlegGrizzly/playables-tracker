@@ -185,7 +185,25 @@ def main() -> int:
     ap.add_argument("--data", type=Path, default=ROOT / "docs" / "data.json")
     ap.add_argument("--state", type=Path, default=ROOT / "data" / "alerts_sent.json")
     ap.add_argument("--dry-run", action="store_true", help="не отправлять и не запоминать")
+    ap.add_argument("--test", action="store_true", help="отправить тестовое сообщение и выйти")
     args = ap.parse_args()
+
+    if args.test:
+        token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        chats = [c.strip() for c in os.environ.get("TELEGRAM_CHAT_ID", "").split(",") if c.strip()]
+        if not token or not chats:
+            print(f"Не заданы: {'TELEGRAM_BOT_TOKEN ' if not token else ''}{'TELEGRAM_CHAT_ID' if not chats else ''}")
+            return 1
+        data = json.loads(args.data.read_text(encoding="utf-8"))
+        dash = os.environ.get("DASHBOARD_URL") or ""
+        active = sum(1 for g in data["games"] if not g.get("rm"))
+        send_telegram(token, chats, (
+            "✅ <b>Playables Tracker подключён</b>\n\n"
+            f"Данные на {data['updated']}, снимков: {len(data['dates'])}, игр: {active}.\n"
+            "Сюда будут приходить резкие пики, залетающие новинки и новые игры в топ-10 Hot."
+            + (f'\n\n<a href="{html.escape(dash)}">Открыть дашборд</a>' if dash else "")))
+        print(f"Тестовое сообщение отправлено в {len(chats)} чат(а)")
+        return 0
 
     data = json.loads(args.data.read_text(encoding="utf-8"))
     sent = json.loads(args.state.read_text(encoding="utf-8")) if args.state.exists() else {}

@@ -6,6 +6,11 @@ on:
     # снимок привязан к дате данных источника, поэтому дублей не будет
     - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      test_telegram:
+        description: "Только отправить тестовое сообщение в Telegram"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -21,17 +26,29 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Тест Telegram
+        if: ${{ inputs.test_telegram }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
+          DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+        run: python3 tracker/alerts.py --test
+
       - name: Тесты
+        if: ${{ !inputs.test_telegram }}
         run: python3 -m unittest discover -s tests
 
       - name: Скачать каталог и сохранить снимок
+        if: ${{ !inputs.test_telegram }}
         id: collect
         run: python3 tracker/collect.py
 
       - name: Пересчитать метрики дашборда
+        if: ${{ !inputs.test_telegram }}
         run: python3 tracker/build.py
 
       - name: Уведомления о пиках
+        if: ${{ !inputs.test_telegram }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
@@ -39,6 +56,7 @@ jobs:
         run: python3 tracker/alerts.py
 
       - name: Закоммитить данные
+        if: ${{ !inputs.test_telegram }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
