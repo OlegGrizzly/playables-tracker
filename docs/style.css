@@ -1,4 +1,4 @@
-.viz-root, .drawer, .tip {
+:root {
   color-scheme: light;
   --page: #f9f9f7;
   --surface-1: #fcfcfb;
@@ -18,9 +18,7 @@
   --hot: #eb6834;
 }
 @media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) .viz-root,
-  :root:where(:not([data-theme="light"])) .drawer,
-  :root:where(:not([data-theme="light"])) .tip {
+  :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
     --page: #0d0d0d;
     --surface-1: #1a1a19;
@@ -42,8 +40,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; }
-body { background: var(--page); }
+html, body { margin: 0; background: var(--page); color: var(--text-primary); }
 .viz-root {
   min-height: 100vh;
   background: var(--page);

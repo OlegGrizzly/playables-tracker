@@ -285,6 +285,24 @@ def build(data_dir: Path) -> dict:
     }
 
 
+def stamp_assets(docs: Path) -> None:
+    """Проставляет ?v=<хэш содержимого> у style.css/app.js в index.html, чтобы браузер
+    не держал старые версии из кэша. Хэш детерминирован — без лишних коммитов."""
+    import hashlib
+    import re
+    index = docs / "index.html"
+    if not index.exists():
+        return
+    html = index.read_text(encoding="utf-8")
+    for name in ("style.css", "app.js"):
+        f = docs / name
+        if f.exists():
+            h = hashlib.sha1(f.read_bytes()).hexdigest()[:10]
+            html = re.sub(r'(["\'])' + re.escape(name) + r'(\?v=[0-9a-f]*)?\1', rf'\g<1>{name}?v={h}\g<1>', html)
+    if html != index.read_text(encoding="utf-8"):
+        index.write_text(html, encoding="utf-8")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Собрать docs/data.json")
     ap.add_argument("--data-dir", type=Path, default=ROOT / "data")
@@ -293,6 +311,7 @@ def main() -> int:
     out = build(args.data_dir)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    stamp_assets(args.out.parent)
     print(f"{args.out}: игр {len(out['games'])}, снимков {len(out['dates'])}, "
           f"{args.out.stat().st_size / 1024:.0f} КБ")
     return 0
