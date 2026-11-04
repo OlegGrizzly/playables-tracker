@@ -138,6 +138,23 @@ class PipelineTest(unittest.TestCase):
         msgs = alerts.render(sig, out, "https://example.org/")
         self.assertTrue(any("Резкие пики" in m for m in msgs))
 
+    def test_rate_one_step_and_zero(self):
+        start = dt.date(2026, 11, 3)
+        pub = start - dt.timedelta(days=100)
+        out = self.run_days(start, 2, [
+            # как Going Balls: 101M -> 102M, шаг 1M — прирост в 1 шаг должен учитываться
+            ("BIG", "Big", pub, "S", lambda k, day: 101_000_000 + 1_000_000 * k),
+            # число не изменилось: темп < шага (1K), а не «среднее за жизнь» 500K/100 = 5K
+            ("FLAT", "Flat", pub, "S", lambda k, day: 500_000),
+        ])
+        g = {x["id"]: x for x in out["games"]}
+        self.assertEqual((g["BIG"]["est"], g["BIG"]["lt"]), (0, 0))
+        self.assertEqual(g["BIG"]["rate"], 1_000_000)
+        self.assertEqual(g["BIG"]["prec"], 1_000_000)
+        self.assertEqual((g["FLAT"]["est"], g["FLAT"]["lt"]), (0, 1))
+        self.assertEqual(g["FLAT"]["prec"], 1_000)
+        self.assertLessEqual(g["FLAT"]["rate"], 1_000)
+
     def test_old_snapshot_not_overwritten(self):
         bg = [(f"G{i}", "g", 100 + i, 20260101, "S") for i in range(3)]
         collect.collect(self.dir, html=page("2026-11-05", bg))

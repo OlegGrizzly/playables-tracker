@@ -52,7 +52,16 @@ const dayMs = 864e5;
 const toDay = iso => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / dayMs;
 const ageTxt = a => a == null ? '—' : `${a} дн`;
 const topPct = p => p == null ? '—' : `топ ${Math.max(1, Math.ceil((1 - p) * 100))}%`;
-function rateTxt(g) { return g.rate == null ? '—' : `${g.est ? '≈' : ''}${fmt(g.rate)}`; }
+function rateTxt(g) {
+  if (g.rate == null) return '—';
+  if (g.lt) return `&lt;${fmt(g.prec)}`; // плеи не изменились — темп меньше шага округления
+  return `${g.est ? '≈' : ''}${fmt(g.rate)}`;
+}
+function rateNote(g) {
+  if (g.est) return 'оценка: плеи / возраст (нет 2 снимков)';
+  if (g.lt) return `за ${g.span} дн число не изменилось — прирост меньше шага округления YouTube (${fmt(g.q)})`;
+  return `за ${g.span} дн · точность ±${fmt(g.prec)} (округление YouTube)`;
+}
 function momHtml(m) {
   if (m == null) return '<span class="muted">—</span>';
   const cls = m >= 1.15 ? 'up' : m <= 0.85 ? 'down' : '';
@@ -107,7 +116,7 @@ const COL = {
   age: { label: 'Возраст', cls: 'hide-sm', get: g => g.age, html: g => ageTxt(g.age) },
   plays: { label: 'Плеев', get: g => g.plays, html: g => fmt(g.plays) },
   d1: { label: 'За сутки', cls: 'hide-sm', get: g => g.d1, html: g => g.d1 == null ? '<span class="muted">—</span>' : fmtD(g.d1) },
-  rate: { label: 'В день', short: '/день', title: 'Средний прирост в день за ≤7 дней (≈ — оценка плеи/возраст)', get: g => g.rate, html: rateTxt },
+  rate: { label: 'В день', short: '/день', title: 'Средний прирост в день за ≤7 дней. «<X» — число не изменилось, темп меньше шага округления; ≈ — оценка плеи/возраст (нет 2 снимков)', get: g => g.rate, html: rateTxt },
   growth: { label: 'Рост/нед', cls: 'hide-sm', get: g => g.growth, html: g => growthHtml(g.growth) },
   mom: { label: 'Ускорение', cls: 'hide-sm', title: 'Темп 3 последних дней / темп 7 дней до них', get: g => g.mom, html: g => momHtml(g.mom) },
   peer: { label: 'Ровесники', short: 'Ровес.', title: 'Насколько игра сильнее игр того же возраста', get: g => g.peer, html: g => topPct(g.peer) },
@@ -340,7 +349,7 @@ function render() {
     const shown = tab === 'pubs' ? rows.slice(0, S.limit) : rows;
     html = '';
     if (tab === 'genres') {
-      html += `<div class="card" style="margin-bottom:12px"><h2>Плеев в день по жанрам</h2><div class="note" style="margin:0 0 8px">Сумма темпов игр жанра${S.data.dates.length < 8 ? ' (пока оценка плеи/возраст)' : ''}. Клик по строке — фильтр по жанру.</div><div class="chartbox"><canvas id="cGenres"></canvas></div></div>`;
+      html += `<div class="card" style="margin-bottom:12px"><h2>Плеев в день по жанрам</h2><div class="note" style="margin:0 0 8px">Сумма темпов игр жанра${S.data.dates.length < 8 ? ' (истории пока мало — у больших игр темп грубый из-за округления YouTube)' : ''}. Клик по строке — фильтр по жанру.</div><div class="chartbox"><canvas id="cGenres"></canvas></div></div>`;
     } else {
       html += '<div class="note" style="margin:0 0 8px">Клик по строке — все игры издателя. Названия студий как в каталоге YouTube (одна студия может встречаться в нескольких написаниях).</div>';
     }
@@ -430,7 +439,7 @@ function openGame(id, push = true) {
     <div class="kpis">
       <div class="kpi"><div class="l">Плеев всего</div><div class="v">${fmt(g.plays)}</div><div class="s">шаг округления ${fmt(g.q)}</div></div>
       <div class="kpi"><div class="l">За сутки</div><div class="v">${fmtD(g.d1)}</div><div class="s">${g.d1 == null ? 'нет снимка за вчера' : 'прирост к вчера'}</div></div>
-      <div class="kpi"><div class="l">В день</div><div class="v">${rateTxt(g)}</div><div class="s">${g.est ? 'оценка: плеи / возраст' : `за ${g.span} дн`}</div></div>
+      <div class="kpi"><div class="l">В день</div><div class="v">${rateTxt(g)}</div><div class="s">${esc(rateNote(g))}</div></div>
       <div class="kpi"><div class="l">Рост за неделю</div><div class="v">${growthHtml(g.growth)}</div><div class="s">к плеям неделю назад</div></div>
       <div class="kpi"><div class="l">Ускорение</div><div class="v">${momHtml(g.mom)}</div><div class="s">3 дн против 7 дн до них</div></div>
       <div class="kpi"><div class="l">Ровесники</div><div class="v">${topPct(g.peer)}</div><div class="s">${g.peerN ? `среди ${g.peerN} игр того же возраста` : 'мало ровесников'}</div></div>
@@ -524,7 +533,7 @@ async function init() {
   if (n < 11) {
     const w = $('#warn');
     w.hidden = false;
-    w.innerHTML = `<b>История копится: ${n} ${n === 1 ? 'снимок' : 'снимка(ов)'}.</b> Пока снимков меньше 2, «в день» — оценка плеи/возраст (≈). Реальный темп появится со 2-го снимка, ускорение — примерно через 10 дней. Сравнение с ровесниками работает сразу.`;
+    w.innerHTML = `<b>История копится: ${n} ${n === 1 ? 'снимок' : 'снимка(ов)'}.</b> «В день» считается по реальному приросту между снимками; YouTube округляет плеи, поэтому у больших игр темп пока грубый («&lt;1M» — число за день не изменилось). Окно до 7 дней сделает его точнее, ускорение появится примерно через 10 дней. Сравнение с ровесниками работает сразу.`;
   }
   $('#foot').textContent = `Источник: playables.games (публичный каталог YouTube Playables). Веса Hot: темп ${data.weights.rate}, ровесники ${data.weights.peer}, ускорение ${data.weights.mom}.`;
 

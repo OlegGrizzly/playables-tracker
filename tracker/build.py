@@ -5,8 +5,9 @@
   plays    — всего плеев (округлено так, как показывает YouTube)
   age      — дней с публикации
   d1       — прирост за последние сутки (если есть снимок за T-1)
-  rate     — плеев в день за окно до 7 дней. Пока истории мало и прирост
-             «тонет» в округлении — оценка plays/age (флаг est=1)
+  rate     — плеев в день за окно до 7 дней по реальному приросту между снимками.
+             Прирост 0 -> известна только граница «< шаг округления / окно» (lt=1).
+             Нет двух снимков -> оценка plays/age (est=1)
   growth   — рост за неделю, % (rate*7 / plays неделю назад)
   mom      — ускорение: темп за 3 последних дня / темп за 7 дней до этого
   peer     — перцентиль среди «ровесников» (0..1): сравниваем плеи-в-день-жизни
@@ -186,16 +187,29 @@ def build(data_dir: Path) -> dict:
             d1 = t_val - prev[1]
 
         # rate / growth
+        # Любое наблюдение лучше среднего за жизнь:
+        #  прирост > 0  -> реальный темп (точность ± шаг округления / окно);
+        #  прирост = 0  -> известна только верхняя граница: темп < шаг / окно (lt=1),
+        #                  для ранжирования берём середину [0, граница], но не выше среднего за жизнь;
+        #  нет 2 снимков -> оценка «плеи / возраст» (est=1).
         rate = growth = None
-        est = 0
+        est = lt = 0
         span = 0
+        prec = None
         wr = window_rate(series, t_date, t_val, 7)
         if wr:
             r, delta, span, base_val = wr
-            if span >= 7 or delta >= 2 * qn:
+            prec = qn / span
+            if delta > 0:
                 rate = r
                 if base_val > 0:
                     growth = r * 7 / base_val * 100
+            else:
+                lt = 1
+                rate = prec / 2
+                if age is not None:
+                    rate = min(rate, per_day(t_val, age))
+                growth = 0.0 if span >= 7 else None
         if rate is None and age is not None:
             rate = per_day(t_val, age)
             est = 1
@@ -247,6 +261,8 @@ def build(data_dir: Path) -> dict:
             "d1": d1,
             "rate": round(rate, 2) if rate is not None else None,
             "est": est,
+            "lt": lt,
+            "prec": round(prec, 2) if prec is not None else None,
             "span": span,
             "growth": round(growth, 2) if growth is not None else None,
             "mom": round(mom, 3) if mom is not None else None,

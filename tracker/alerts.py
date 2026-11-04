@@ -150,7 +150,7 @@ def render(signals: list[dict], data: dict, dash: str | None) -> list[str]:
                 f"    {meta(g)}")
         else:
             blocks["hot"].append(
-                f"🔥 #{s['rank']} {link(g)} — Hot {g['hot']:.0f}, {'≈' if g.get('est') else ''}{fmt(g.get('rate'))}/день\n"
+                f"🔥 #{s['rank']} {link(g)} — Hot {g['hot']:.0f}, {('<' + fmt(g.get('prec'))) if g.get('lt') else (('≈' if g.get('est') else '') + fmt(g.get('rate')))}/день\n"
                 f"    {meta(g)}")
 
     titles = {"spike": "Резкие пики", "breakout": "Новинки залетают", "hot": "Новые в топ-10 Hot"}
