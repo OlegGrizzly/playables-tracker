@@ -411,6 +411,13 @@ function render() {
   view.innerHTML = html;
   $('#count').textContent = count;
   const nAct = [f.genre, f.age, f.min, f.pub, f.status !== 'active'].filter(Boolean).length;
+  // выбор сортировки — только для списков игр; показываем текущую (в т.ч. выбранную кликом по заголовку)
+  const gameTab = ['hot', 'all', 'new', 'cmp'].includes(tab);
+  $('#fSortWrap').hidden = !gameTab;
+  if (gameTab) {
+    const v = S.sort[tab].join(':');
+    $('#fSort').value = [...$('#fSort').options].some(o => o.value === v) ? v : '';
+  }
   $('#fActive').textContent = nAct || '';
   bindTable(view, tab);
   view.querySelectorAll('tr[data-id]').forEach(tr => tr.addEventListener('click', () => openGame(tr.dataset.id)));
@@ -557,6 +564,11 @@ async function init() {
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab); });
   let t;
   $('#q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { S.limit = PAGE; render(); }, 120); });
+  $('#fSort').addEventListener('change', () => {
+    const [k, d] = $('#fSort').value.split(':');
+    if (!k) return;
+    S.sort[S.tab] = [k, +d]; S.limit = PAGE; render();
+  });
   ['#fGenre', '#fAge', '#fMin', '#fStatus'].forEach(s => $(s).addEventListener('change', () => { S.limit = PAGE; render(); }));
   $('#fPub').addEventListener('change', () => { S.limit = PAGE; render(); });
   $('#fPub').addEventListener('input', () => { if (!$('#fPub').value) render(); });

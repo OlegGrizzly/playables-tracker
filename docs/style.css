@@ -206,3 +206,5 @@ svg.spark { display: block; }
   .chartbox { height: 200px; }
   .chartbox.tall { height: 260px; }
 }
+
+.filters [hidden] { display: none !important; }
