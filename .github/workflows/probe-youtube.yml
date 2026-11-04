@@ -1,0 +1,24 @@
+name: Проверка YouTube (разовая)
+
+# Только ручной запуск: проверить, отдаёт ли YouTube точные числа плеев.
+# Ничего не коммитит; сырые ответы — в артефакте probe-youtube.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Запросы к YouTube
+        run: python3 tracker/probe_youtube.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-youtube
+          path: probe_out/
+          retention-days: 3
