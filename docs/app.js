@@ -248,7 +248,7 @@ function chartBase(el) {
       tooltip: {
         backgroundColor: surf, titleColor: txt, bodyColor: txt, borderColor: border, borderWidth: 1, padding: 8,
         filter: it => !String(it.dataset.label).startsWith('_'),
-        callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.parsed.y)}` },
+        callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.chart.options.indexAxis === 'y' ? c.parsed.x : c.parsed.y)}` },
       },
     },
     scales: {
