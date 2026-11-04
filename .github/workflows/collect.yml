@@ -48,4 +48,9 @@ jobs:
             exit 0
           fi
           git commit -m "chore(data): снимок ${{ steps.collect.outputs.date }}"
-          git push
+          for i in 1 2 3; do
+            git pull --rebase --quiet origin main && git push && exit 0
+            echo "Пуш не удался (попытка $i), повтор через $((i * 15)) с"
+            sleep $((i * 15))
+          done
+          exit 1
