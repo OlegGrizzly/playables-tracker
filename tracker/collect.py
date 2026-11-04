@@ -32,6 +32,7 @@ import urllib.request
 from pathlib import Path
 
 SOURCE_URL = "https://playables.games/app/"
+NEW_URL = "https://playables.games/new/"  # «Added <дата>» — когда игра появилась в каталоге
 USER_AGENT = "Mozilla/5.0 (compatible; PlayablesTracker/1.0; daily snapshot)"
 MIN_GAMES = 500  # защита от записи «пустого» снимка, если вёрстка сломалась
 ROOT = Path(__file__).resolve().parent.parent
@@ -117,6 +118,27 @@ def parse_catalog(html: str) -> tuple[str | None, list[dict]]:
     return data_date, games
 
 
+MONTHS = {m: i for i, m in enumerate(
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
+
+
+def parse_added(new_html: str, slug_to_id: dict[str, str]) -> dict[str, str]:
+    """Страница /new/: секции «Added Nov 3, 2026» со ссылками /games/<slug>/ -> {id: дата}."""
+    out: dict[str, str] = {}
+    parts = re.split(r"<h2[^>]*>\s*Added\s+", new_html)
+    for part in parts[1:]:
+        m = re.match(r"([A-Z][a-z]{2})[a-z]*\.?\s+(\d{1,2}),\s+(\d{4})", part)
+        if not m or m.group(1) not in MONTHS:
+            continue
+        date = f"{m.group(3)}-{MONTHS[m.group(1)]:02d}-{int(m.group(2)):02d}"
+        section = part.split("<h2", 1)[0]
+        for slug in re.findall(r'href="/games/([^/"]+)/"', section):
+            gid = slug_to_id.get(slug)
+            if gid and (gid not in out or date < out[gid]):
+                out[gid] = date
+    return out
+
+
 def latest_snapshot_date(snap_dir: Path) -> str | None:
     dates = sorted(p.stem for p in snap_dir.glob("*.csv"))
     return dates[-1] if dates else None
@@ -132,14 +154,23 @@ def write_snapshot(path: Path, games: list[dict]) -> bool:
     return True
 
 
-def update_games_meta(path: Path, games: list[dict], date: str) -> tuple[dict, list[str]]:
+def update_games_meta(path: Path, games: list[dict], date: str,
+                      added: dict[str, str] | None = None) -> tuple[dict, list[str]]:
+    """added — даты появления в каталоге с /new/. Для игр, которых там нет, но которые
+    появились у нас уже после старта трекера, дата появления = первый снимок с ними."""
+    first_run = not path.exists()
     meta = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    added = added or {}
     new_ids = []
     for g in games:
         e = meta.get(g["id"])
         if e is None:
             e = meta[g["id"]] = {"first_seen": date}
             new_ids.append(g["id"])
+            if not first_run and g["id"] not in added:
+                e["added"] = date
+        if g["id"] in added and (not e.get("added") or added[g["id"]] < e["added"]):
+            e["added"] = added[g["id"]]
         e.update(
             name=g["name"],
             publisher=g["publisher"],
@@ -155,9 +186,26 @@ def update_games_meta(path: Path, games: list[dict], date: str) -> tuple[dict, l
     return meta, new_ids
 
 
-def collect(data_dir: Path, html: str | None = None, today: str | None = None) -> dict:
+def load_added(html: str, new_html: str | None) -> dict[str, str]:
+    """Даты появления в каталоге. Некритично: при любой ошибке — пустой словарь."""
+    try:
+        pages = extract_js_const(html, "PAGES")
+        if new_html is None:
+            new_html = fetch(NEW_URL)
+        added = parse_added(new_html, {slug: gid for gid, slug in pages.items()})
+        print(f"Даты появления в каталоге: {len(added)} игр")
+        return added
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️  Не удалось получить даты появления в каталоге: {exc}", file=sys.stderr)
+        return {}
+
+
+def collect(data_dir: Path, html: str | None = None, today: str | None = None,
+            new_html: str | None = None) -> dict:
+    network = html is None
     html = html if html is not None else fetch(SOURCE_URL)
     data_date, games = parse_catalog(html)
+    added = load_added(html, new_html) if (network or new_html is not None) else {}
     if not data_date:
         data_date = today or dt.datetime.now(dt.timezone.utc).date().isoformat()
         print(f"⚠️  Метка «updated» не найдена, использую дату запуска {data_date}", file=sys.stderr)
@@ -170,7 +218,7 @@ def collect(data_dir: Path, html: str | None = None, today: str | None = None) -
         return {"date": data_date, "changed": False, "games": len(games), "new": []}
 
     changed = write_snapshot(snap_dir / f"{data_date}.csv", games)
-    meta, new_ids = update_games_meta(data_dir / "games.json", games, data_date)
+    meta, new_ids = update_games_meta(data_dir / "games.json", games, data_date, added)
     active = sum(1 for g in games if not g["removed"])
     print(
         f"Снимок {data_date}: игр {len(games)} (активных {active}), "

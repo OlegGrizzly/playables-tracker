@@ -41,6 +41,24 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(games[0]["genre"], "Simulation")
         self.assertEqual(games[0]["publisher"], "Studio")
 
+    def test_parse_added(self):
+        html = ('<h2 class="shelf">Added Nov 3, 2026 <span>2 games</span></h2>'
+                '<a href="/games/loop-pop/">x</a><a href="/games/opps/">y</a>'
+                '<h2 class="shelf">Added Oct 30, 2026</h2><a href="/games/opps/">z</a>'
+                '<a href="/games/unknown/">u</a><h2>FAQ</h2><a href="/games/faq-game/">f</a>')
+        got = collect.parse_added(html, {"loop-pop": "L", "opps": "O", "faq-game": "F"})
+        self.assertEqual(got, {"L": "2026-11-03", "O": "2026-10-30"})
+
+    def test_added_date_for_games_appearing_later(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "games.json"
+            g = lambda gid: {"id": gid, "name": gid, "plays": 1, "genre": None, "icon": None,
+                             "publisher": None, "removed": None, "published": "2026-10-01"}
+            collect.update_games_meta(p, [g("A")], "2026-11-03", {})
+            meta, _ = collect.update_games_meta(p, [g("A"), g("B")], "2026-11-04", {"A": "2026-10-20"})
+            self.assertEqual(meta["A"]["added"], "2026-10-20")  # из /new/
+            self.assertEqual(meta["B"]["added"], "2026-11-04")  # появилась после старта трекера
+
     def test_too_few_games_raises(self):
         with self.assertRaises(collect.ParseError):
             collect.parse_catalog(page("2026-11-03", [("A", "Alpha", 1, 0, "S")]))

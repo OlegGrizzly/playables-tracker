@@ -238,6 +238,7 @@ def build(data_dir: Path) -> dict:
             "pub": pub,
             "ic": m.get("icon"),
             "fs": m.get("first_seen"),
+            "ad": m.get("added"),
             "rm": m.get("removed"),
             "off": off,
             "s": s[off:],

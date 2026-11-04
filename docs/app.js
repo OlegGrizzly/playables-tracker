@@ -17,6 +17,7 @@ const S = {
   },
   limit: PAGE,
   cmp: loadCmp(),
+  newBy: 'ad', // группировка новинок: ad — по появлению в каталоге, pub — по дате публикации
   charts: [],
   viewCharts: [],
 };
@@ -97,7 +98,8 @@ const COL = {
   rank: { label: '#', nosort: true, html: (g, i) => i + 1 },
   game: { label: 'Игра', cls: 'game', get: g => (g.n || '').toLowerCase(), html: gameCell },
   genre: { label: 'Жанр', cls: 'txt hide-sm', get: g => g.g || '', html: g => esc(g.g || '—') },
-  pub: { label: 'Опубл.', cls: 'hide-sm', get: g => g.pub || '', html: g => fmtDate(g.pub) },
+  pub: { label: 'Опубл.', cls: 'hide-sm', title: 'Дата публикации на YouTube', get: g => g.pub || '', html: g => fmtDate(g.pub) },
+  added: { label: 'В каталоге', cls: 'hide-sm', title: 'Когда игра появилась в каталоге Playables (по playables.games / нашим снимкам)', get: g => g.ad || '', html: g => g.ad ? fmtDate(g.ad) : '<span class="muted">—</span>' },
   age: { label: 'Возраст', get: g => g.age, html: g => ageTxt(g.age) },
   plays: { label: 'Плеев', get: g => g.plays, html: g => fmt(g.plays) },
   d1: { label: 'За сутки', get: g => g.d1, html: g => g.d1 == null ? '<span class="muted">—</span>' : fmtD(g.d1) },
@@ -114,8 +116,8 @@ const COL = {
 };
 const TAB_COLS = {
   hot: ['rank', 'game', 'genre', 'age', 'plays', 'rate', 'growth', 'mom', 'peer', 'hot', 'why', 'spark'],
-  new: ['rank', 'game', 'genre', 'age', 'plays', 'D1', 'D3', 'D7', 'rate', 'peer', 'hot', 'spark'],
-  all: ['rank', 'game', 'genre', 'pub', 'age', 'plays', 'd1', 'rate', 'growth', 'mom', 'peer', 'hot', 'spark'],
+  new: ['rank', 'game', 'genre', 'pub', 'added', 'age', 'plays', 'D1', 'D3', 'D7', 'rate', 'peer', 'hot', 'spark'],
+  all: ['rank', 'game', 'genre', 'pub', 'added', 'age', 'plays', 'd1', 'rate', 'growth', 'mom', 'peer', 'hot', 'spark'],
   cmp: ['rank', 'game', 'genre', 'age', 'plays', 'rate', 'growth', 'mom', 'peer', 'hot'],
 };
 
@@ -298,13 +300,16 @@ function render() {
     html = tableHtml(tab, rows.slice(0, S.limit), TAB_COLS[tab]);
     if (rows.length > S.limit) html += `<button class="more" id="more">Показать ещё (${rows.length - S.limit})</button>`;
   } else if (tab === 'new') {
+    const keyOf = g => (S.newBy === 'ad' ? g.ad || g.pub : g.pub) || null;
+    const today = toDay(S.data.updated);
     let list = applyFilters(S.games, f);
-    if (!f.age) list = list.filter(g => g.age != null && g.age <= 30);
+    // по умолчанию — последние 30 дней; при поиске или фильтре возраста ограничение снимаем
+    if (!f.age && !f.q) list = list.filter(g => keyOf(g) && today - toDay(keyOf(g)) <= 30);
     count = `${list.length} игр`;
     const [sk, sd] = S.sort.new;
     const groups = new Map();
-    for (const g of sortList(list, 'pub', -1)) {
-      const k = g.pub || '—';
+    for (const g of list.slice().sort((a, b) => (keyOf(b) || '').localeCompare(keyOf(a) || ''))) {
+      const k = keyOf(g) || '—';
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(g);
     }
@@ -312,7 +317,11 @@ function render() {
       `${d === '—' ? 'Без даты' : fmtDate(d)} · ${items.length} игр${items.length ? ` · медиана плеев ${fmt(sortList(items, 'plays', 1)[Math.floor(items.length / 2)].plays)}` : ''}`,
       sortList(items, sk, sd),
     ]);
-    html = list.length ? tableHtml('new', null, TAB_COLS.new, COL, grouped) : '<div class="empty">Нет новинок под фильтры</div>';
+    html = `<div class="filters" style="margin-top:0">Группировать:
+        <label><input type="radio" name="newBy" value="ad" ${S.newBy === 'ad' ? 'checked' : ''}> по появлению в каталоге</label>
+        <label><input type="radio" name="newBy" value="pub" ${S.newBy === 'pub' ? 'checked' : ''}> по дате публикации</label>
+        <span class="muted">${S.newBy === 'ad' ? 'как «Added» на playables.games; у старых игр без этой даты — дата публикации' : 'дата публикации на YouTube'}</span></div>`
+      + (list.length ? tableHtml('new', null, TAB_COLS.new, COL, grouped) : '<div class="empty">Нет новинок под фильтры</div>');
   } else if (tab === 'genres' || tab === 'pubs') {
     const list = applyFilters(S.games, f, { skipGenre: tab === 'genres', skipPub: tab === 'pubs' });
     const rows = sortList(aggregate(list, tab === 'genres' ? g => g.g : g => g.p), ...S.sort[tab], AGG_COL);
@@ -382,6 +391,7 @@ function render() {
     if (tab === 'genres') { $('#fGenre').value = tr.dataset.agg; setTab('hot'); }
     else { $('#fPub').value = tr.dataset.agg; setTab('all'); }
   }));
+  view.querySelectorAll('input[name=newBy]').forEach(r => r.addEventListener('change', () => { S.newBy = r.value; render(); }));
   $('#more')?.addEventListener('click', () => { S.limit += PAGE; render(); });
   $('#cmpClear')?.addEventListener('click', () => { S.cmp = []; saveCmp(); render(); });
 }
@@ -399,7 +409,7 @@ function openGame(id, push = true) {
     <div class="dhead">${icon(g, 144)}<div>
       <h2>${esc(g.n)}${g.age != null && g.age <= 7 ? '<span class="tag">NEW</span>' : ''}${g.rm ? `<span class="tag rm">удалена ${fmtDate(g.rm)}</span>` : ''}</h2>
       <div class="sub"><a href="#" id="dPub">${esc(g.p || '—')}</a> · ${esc(g.g || '—')}</div>
-      <div class="sub">Опубликована ${fmtDate(g.pub)}${g.age != null ? ` · ${g.age} дн назад` : ''} · в трекере с ${fmtDate(g.fs)}</div>
+      <div class="sub">Опубликована ${fmtDate(g.pub)}${g.age != null ? ` · ${g.age} дн назад` : ''} ${g.ad ? ` · в каталоге с ${fmtDate(g.ad)}` : ''} · в трекере с ${fmtDate(g.fs)}</div>
     </div></div>
     <div class="dlinks">
       <a class="btn" href="https://www.youtube.com/playables/${encodeURIComponent(g.id)}" target="_blank" rel="noopener">▶ Открыть на YouTube</a>
