@@ -162,8 +162,6 @@ svg.spark { display: block; }
 .sm-only { display: none; }
 .fbox > summary { display: none; }
 .fbox > summary::-webkit-details-marker { display: none; }
-.grpby { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 10px; color: var(--text-secondary); font-size: 13px; }
-.grpby label { display: inline-flex; gap: 4px; align-items: center; }
 
 @media (max-width: 720px) {
   .viz-root { padding: 12px 10px 32px; font-size: 13px; }
@@ -177,8 +175,6 @@ svg.spark { display: block; }
   .filters label { flex-direction: column; align-items: stretch; gap: 2px; font-size: 12px; }
   .filters select, .filters input:not([type=radio]), .filters #fPub { width: 100%; }
   .count { grid-column: 1 / -1; margin-left: 0; }
-  .grpby { font-size: 12px; gap: 8px; }
-  .grpby .muted { display: none; }
   .grid2 { grid-template-columns: 1fr; }
   .t .hide-sm { display: none; }
   .sm-only { display: inline; }
