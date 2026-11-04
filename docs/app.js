@@ -57,6 +57,12 @@ function rateTxt(g) {
   if (g.lt) return `&lt;${fmt(g.prec)}`; // плеи не изменились — темп меньше шага округления
   return `${g.est ? '≈' : ''}${fmt(g.rate)}`;
 }
+// Сортировка «в день»: сначала измеренный прирост (по величине), затем «<X» —
+// у них прирост не виден из-за округления, реальное значение от 0 до X.
+function rateSortKey(g) {
+  if (g.rate == null) return null;
+  return g.lt ? -1e12 + (g.prec || 0) : g.rate;
+}
 function rateNote(g) {
   if (g.est) return 'оценка: плеи / возраст (нет 2 снимков)';
   if (g.lt) return `за ${g.span} дн число не изменилось — прирост меньше шага округления YouTube (${fmt(g.q)})`;
@@ -116,7 +122,7 @@ const COL = {
   age: { label: 'Возраст', cls: 'hide-sm', get: g => g.age, html: g => ageTxt(g.age) },
   plays: { label: 'Плеев', get: g => g.plays, html: g => fmt(g.plays) },
   d1: { label: 'За сутки', cls: 'hide-sm', get: g => g.d1, html: g => g.d1 == null ? '<span class="muted">—</span>' : fmtD(g.d1) },
-  rate: { label: 'В день', short: '/день', title: 'Средний прирост в день за ≤7 дней. «<X» — число не изменилось, темп меньше шага округления; ≈ — оценка плеи/возраст (нет 2 снимков)', get: g => g.rate, html: rateTxt },
+  rate: { label: 'В день', short: '/день', title: 'Средний прирост в день за ≤7 дней. «<X» — число не изменилось, темп меньше шага округления; ≈ — оценка плеи/возраст (нет 2 снимков)', get: rateSortKey, html: rateTxt },
   growth: { label: 'Рост/нед', cls: 'hide-sm', get: g => g.growth, html: g => growthHtml(g.growth) },
   mom: { label: 'Ускорение', cls: 'hide-sm', title: 'Темп 3 последних дней / темп 7 дней до них', get: g => g.mom, html: g => momHtml(g.mom) },
   peer: { label: 'Ровесники', short: 'Ровес.', title: 'Насколько игра сильнее игр того же возраста', get: g => g.peer, html: g => topPct(g.peer) },
