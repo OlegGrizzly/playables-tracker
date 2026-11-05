@@ -12,6 +12,9 @@
   hot      — игра впервые вошла в топ-HOT_TOP по 🔥 Hot (один раз на игру
              за HOT_COOLDOWN дней).
 
+Отдельно (--check-stale): предупреждение, что нового снимка нет больше 2 суток —
+не чаще раза в сутки, пока снимки не появятся снова.
+
 Повторы гасятся через data/alerts_sent.json (spike — не чаще раза в
 SPIKE_COOLDOWN дней на игру).
 
@@ -47,6 +50,10 @@ BREAKOUT_MAX_AGE = 7
 HOT_TOP = 10
 HOT_COOLDOWN = 14
 MAX_PER_MESSAGE = 15
+# Снимок за день D появляется днём D. Разница в 3 календарных дня — это уже больше
+# 2 суток с его появления, то есть пропущено минимум два обновления источника.
+STALE_DAYS = 3
+RUN_URL = "https://github.com/OlegGrizzly/playables-tracker/actions/workflows/collect.yml"
 
 
 def fmt(n) -> str:
@@ -216,13 +223,63 @@ def deliver(msgs: list[str], token: str, chats: list[str]) -> tuple[int, list[st
     return delivered, errors
 
 
+def check_stale(snap_dir: Path, state: Path, today: dt.date, token: str, chats: list[str],
+                collect_outcome: str = "", dash: str = "") -> int:
+    """Предупреждает, если снимков нет больше 2 суток. -> код выхода (1 — не всем доставлено)."""
+    dates = sorted(p.stem for p in snap_dir.glob("*.csv"))
+    if not dates:
+        print("Снимков нет — проверять нечего.")
+        return 0
+    latest = dt.date.fromisoformat(dates[-1])
+    days = (today - latest).days
+    if days < STALE_DAYS:
+        print(f"Данные свежие: последний снимок {latest}, прошло дней: {days}.")
+        return 0
+
+    sent = json.loads(state.read_text(encoding="utf-8")) if state.exists() else {}
+    prev = sent.get("stale")
+    if prev and dt.date.fromisoformat(prev) >= today:
+        print(f"Снимка нет {days} дн, сегодня уже предупреждали.")
+        return 0
+
+    reason = ("Сбор падает с ошибкой — возможно, playables.games изменил формат."
+              if collect_outcome == "failure" else
+              "Похоже, playables.games не обновляет данные, или запуски по расписанию не проходят.")
+    text = (f"⚠️ <b>Нет нового снимка больше 2 суток</b>\n\n"
+            f"Последний снимок: {latest} ({days} дн назад).\n{reason}\n\n"
+            f'<a href="{RUN_URL}">Запустить сбор вручную</a>'
+            + (f' · <a href="{html.escape(dash)}">Дашборд</a>' if dash else ""))
+    print(text)
+    if not (token and chats):
+        print("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID не заданы — только лог.")
+        return 0
+    failed = send_telegram(token, chats, text)
+    for c, e in failed.items():
+        print(f"Не доставлено, чат {c}: {e}")
+    if len(failed) == len(chats):
+        return 1  # никому не ушло — попробуем при следующем запуске
+    sent["stale"] = today.isoformat()
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(json.dumps(sent, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    return 1 if failed else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Уведомления о пиках")
     ap.add_argument("--data", type=Path, default=ROOT / "docs" / "data.json")
     ap.add_argument("--state", type=Path, default=ROOT / "data" / "alerts_sent.json")
     ap.add_argument("--dry-run", action="store_true", help="не отправлять и не запоминать")
     ap.add_argument("--test", action="store_true", help="отправить тестовое сообщение и выйти")
+    ap.add_argument("--check-stale", action="store_true", help="предупредить, если снимков нет больше 2 суток")
+    ap.add_argument("--snapshots", type=Path, default=ROOT / "data" / "snapshots")
     args = ap.parse_args()
+
+    if args.check_stale:
+        return check_stale(
+            args.snapshots, args.state, dt.datetime.now(dt.timezone.utc).date(),
+            os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(),
+            [c.strip() for c in os.environ.get("TELEGRAM_CHAT_ID", "").split(",") if c.strip()],
+            os.environ.get("COLLECT_OUTCOME", ""), os.environ.get("DASHBOARD_URL", ""))
 
     if args.test:
         token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()

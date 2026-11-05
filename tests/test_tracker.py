@@ -175,6 +175,59 @@ class PipelineTest(unittest.TestCase):
         self.assertIsNone(g["d1"])
 
 
+class StaleCheckTest(unittest.TestCase):
+    TODAY = dt.date(2026, 11, 10)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d = Path(self.tmp.name)
+        self.snaps, self.state = d / "snapshots", d / "sent.json"
+        self.snaps.mkdir()
+        self.state.write_text("{}")
+        self.calls = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _open(self, req, timeout=None):
+        self.calls.append(req.data.decode())
+        return io.BytesIO(b'{"ok":true}')
+
+    def check(self, days_ago, today=None, opener=None, outcome="success"):
+        today = today or self.TODAY
+        (self.snaps / f"{self.TODAY - dt.timedelta(days=days_ago)}.csv").write_text("id,plays\n")
+        with mock.patch("urllib.request.urlopen", opener or self._open), contextlib.redirect_stdout(io.StringIO()):
+            return alerts.check_stale(self.snaps, self.state, today, "T", ["111", "222"], outcome)
+
+    def test_fresh_is_silent(self):
+        self.assertEqual(self.check(2), 0)  # одно пропущенное обновление — ещё не тревога
+        self.assertEqual(self.calls, [])
+
+    def test_stale_alerts_both_once_a_day(self):
+        self.assertEqual(self.check(3), 0)
+        self.assertEqual(len(self.calls), 2)
+        self.check(3)  # следующий запуск в тот же день
+        self.assertEqual(len(self.calls), 2)
+        self.check(3, today=self.TODAY + dt.timedelta(days=1))  # на следующий день — напоминание
+        self.assertEqual(len(self.calls), 4)
+
+    def test_reason_when_collect_failed(self):
+        self.check(5, outcome="failure")
+        self.assertIn("%D0%BF%D0%B0%D0%B4%D0%B0%D0%B5%D1%82", self.calls[0])  # «падает»
+
+    def test_failed_send_is_retried_next_run(self):
+        def down(req, timeout=None):
+            raise OSError("down")
+        self.assertEqual(self.check(3, opener=down), 1)
+        self.assertEqual(json.loads(self.state.read_text()), {})
+        self.assertEqual(self.check(3), 0)
+        self.assertEqual(len(self.calls), 2)
+
+    def test_no_snapshots_is_silent(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(alerts.check_stale(self.snaps, self.state, self.TODAY, "T", ["1"]), 0)
+
+
 class TelegramDeliveryTest(unittest.TestCase):
     """Сбой доставки одному получателю не должен задевать остальных и терять состояние."""
 

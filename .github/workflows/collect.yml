@@ -2,9 +2,10 @@ name: Сбор статистики Playables
 
 on:
   schedule:
-    # каждые 6 часов: сайт обновляет данные раз в день в неизвестное время,
-    # снимок привязан к дате данных источника, поэтому дублей не будет
-    - cron: "17 */6 * * *"
+    # каждые 2 часа: GitHub может задерживать и пропускать запуски по расписанию,
+    # а день теряется, только если за сутки не прошёл ни один. Снимок привязан к дате
+    # данных источника, поэтому дублей не будет. Минута — не начало часа (там выше нагрузка).
+    - cron: "23 */2 * * *"
   workflow_dispatch:
     inputs:
       test_telegram:
@@ -59,8 +60,24 @@ jobs:
           DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
         run: python3 tracker/alerts.py
 
+      # Выполняется и при ошибке сбора: иначе о сломанном источнике не узнаем в Telegram
+      - name: Проверка свежести данных
+        id: stale
+        if: ${{ !cancelled() && !inputs.test_telegram }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
+          DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+          COLLECT_OUTCOME: ${{ steps.collect.outcome }}
+        run: python3 tracker/alerts.py --check-stale
+
+      # Тоже при любом исходе: сохраняем всё, что успели, и отметку о предупреждении,
+      # иначе при падающем сборе предупреждение уходило бы каждые 2 часа
       - name: Закоммитить данные
-        if: ${{ !inputs.test_telegram }}
+        if: ${{ !cancelled() && !inputs.test_telegram }}
+        env:
+          SNAPSHOT_DATE: ${{ steps.collect.outputs.date }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -69,7 +86,8 @@ jobs:
             echo "Изменений нет"
             exit 0
           fi
-          git commit -m "chore(data): снимок ${{ steps.collect.outputs.date }}"
+          if [ -n "$SNAPSHOT_DATE" ]; then MSG="снимок $SNAPSHOT_DATE"; else MSG="состояние уведомлений"; fi
+          git commit -m "chore(data): $MSG"
           for i in 1 2 3; do
             git pull --rebase --quiet origin main && git push && exit 0
             echo "Пуш не удался (попытка $i), повтор через $((i * 15)) с"
@@ -78,7 +96,7 @@ jobs:
           exit 1
 
       - name: Сообщить о сбое уведомлений
-        if: ${{ steps.alerts.outcome == 'failure' }}
+        if: ${{ steps.alerts.outcome == 'failure' || steps.stale.outcome == 'failure' }}
         run: |
           echo "::error::Уведомления доставлены не всем — подробности в шаге «Уведомления о пиках». Данные сохранены."
           exit 1
