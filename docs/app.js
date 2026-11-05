@@ -119,12 +119,36 @@ function points(g) {
   g.s.forEach((v, i) => { if (v != null) out.push({ date: S.data.dates[g.off + i], v }); });
   return out;
 }
+const SPARK_W = 96, SPARK_H = 26;
+function sparkXY(pts) {
+  const vs = pts.map(p => p.v), mn = Math.min(...vs), mx = Math.max(...vs);
+  return pts.map((p, i) => [i / (pts.length - 1) * (SPARK_W - 6) + 3, mx === mn ? SPARK_H / 2 : SPARK_H - 3 - (p.v - mn) / (mx - mn) * (SPARK_H - 6)]);
+}
 function spark(g) {
   const pts = points(g).slice(-30);
   if (pts.length < 2) return '<span class="muted">—</span>';
-  const w = 80, h = 24, vs = pts.map(p => p.v), mn = Math.min(...vs), mx = Math.max(...vs);
-  const xy = pts.map((p, i) => `${(i / (pts.length - 1) * (w - 2) + 1).toFixed(1)},${(mx === mn ? h / 2 : h - 2 - (p.v - mn) / (mx - mn) * (h - 4)).toFixed(1)}`);
-  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${xy.join(' ')}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+  const xy = sparkXY(pts);
+  const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const dots = xy.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2"/>`).join('');
+  return `<svg class="spark" width="${SPARK_W}" height="${SPARK_H}" viewBox="0 0 ${SPARK_W} ${SPARK_H}" aria-hidden="true"><polyline points="${line}" fill="none" stroke="var(--series-1)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/><g class="sd" fill="var(--series-1)">${dots}</g><circle class="sh" r="3.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="1.5" visibility="hidden"/></svg>`;
+}
+// Карточка при наведении на мини-график: по дням — всего и прирост
+function sparkTipHtml(g, hi) {
+  const pts = points(g).slice(-30);
+  let h = `<div class="tt">${esc(g.n)} <span class="muted">· ${pts.length === 1 ? 'снимок' : `${pts.length} ${plural(pts.length, 'снимок', 'снимка', 'снимков')}`}</span></div>`;
+  h += '<div class="tgrid"><span class="th">Дата</span><span class="th">Всего</span><span class="th">Прирост</span>';
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i], prev = pts[i - 1];
+    let d = '';
+    if (prev) {
+      const gap = toDay(p.date) - toDay(prev.date), v = p.v - prev.v;
+      d = v === 0 ? `<span class="muted">0 · &lt;${fmt(g.q)}</span>` : `<span class="${v > 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${fmt(v)}</span>${gap > 1 ? `<small>за ${gap} дн</small>` : ''}`;
+    } else d = '<span class="muted">первый</span>';
+    h += `<span class="${i === hi ? 'hl' : ''}">${fmtDate(p.date, false)}</span><span class="${i === hi ? 'hl' : ''}">${fmt(p.v)}</span><span class="${i === hi ? 'hl' : ''}">${d}</span>`;
+  }
+  h += '</div>';
+  if (points(g).length > 30) h += '<div class="tsub muted">показаны последние 30 снимков</div>';
+  return h;
 }
 function whyChips(g) {
   const c = [];
@@ -672,15 +696,36 @@ async function init() {
     if (y + r.height > innerHeight - 8) y = Math.max(8, innerHeight - r.height - 8);
     tip.style.left = x + 'px'; tip.style.top = y + 'px';
   };
+  const HOVER = '.rt, svg.spark';
+  let sparkIdx = -1;
+  const sparkHover = (svg, g, e) => {
+    const pts = points(g).slice(-30), r = svg.getBoundingClientRect();
+    const fx = (e.clientX - r.left) / r.width * SPARK_W;
+    const xy = sparkXY(pts);
+    let best = 0; for (let i = 1; i < xy.length; i++) if (Math.abs(xy[i][0] - fx) < Math.abs(xy[best][0] - fx)) best = i;
+    const dot = svg.querySelector('.sh');
+    dot.setAttribute('cx', xy[best][0].toFixed(1)); dot.setAttribute('cy', xy[best][1].toFixed(1)); dot.setAttribute('visibility', 'visible');
+    if (best !== sparkIdx) { sparkIdx = best; tip.innerHTML = sparkTipHtml(g, best); }
+  };
   document.addEventListener('mouseover', e => {
-    const el = e.target.closest('.rt');
+    const el = e.target.closest(HOVER);
     if (!el) return;
     const g = S.byId.get(el.closest('tr[data-id]')?.dataset.id);
     if (!g) return;
-    tip.innerHTML = rateTipHtml(g); tip.hidden = false; placeTip(e);
+    sparkIdx = -1;
+    if (el.matches('.rt')) tip.innerHTML = rateTipHtml(g); else sparkHover(el, g, e);
+    tip.hidden = false; placeTip(e);
   });
-  document.addEventListener('mousemove', e => { if (!tip.hidden && e.target.closest('.rt')) placeTip(e); });
-  document.addEventListener('mouseout', e => { if (e.target.closest('.rt') && !e.relatedTarget?.closest?.('.rt')) tip.hidden = true; });
+  document.addEventListener('mousemove', e => {
+    if (tip.hidden) return;
+    const el = e.target.closest(HOVER); if (!el) return;
+    if (el.matches('svg.spark')) { const g = S.byId.get(el.closest('tr[data-id]')?.dataset.id); if (g) sparkHover(el, g, e); }
+    placeTip(e);
+  });
+  document.addEventListener('mouseout', e => {
+    const el = e.target.closest(HOVER);
+    if (el && !e.relatedTarget?.closest?.(HOVER)) { tip.hidden = true; el.querySelector?.('.sh')?.setAttribute('visibility', 'hidden'); }
+  });
   addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
   addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#drawer').hidden) closeGame(); });
   addEventListener('hashchange', () => {

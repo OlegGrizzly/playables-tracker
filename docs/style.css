@@ -126,7 +126,14 @@ table.t { width: 100%; border-collapse: collapse; background: var(--surface-1); 
 .hotbar i::after { content: ""; display: block; height: 100%; width: var(--w); background: var(--hot); border-radius: 3px; }
 .why { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-start; }
 .chip { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--surface-2); color: var(--text-secondary); white-space: nowrap; }
-svg.spark { display: block; }
+svg.spark { display: block; cursor: crosshair; overflow: visible; }
+svg.spark .sd circle { opacity: .55; }
+.tip .tgrid { display: grid; grid-template-columns: auto auto auto; column-gap: 14px; row-gap: 1px; font-variant-numeric: tabular-nums; }
+.tip .tgrid span { text-align: right; }
+.tip .tgrid span:first-child { text-align: left; color: var(--text-secondary); }
+.tip .tgrid .th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding-bottom: 2px; }
+.tip .tgrid .hl { background: color-mix(in srgb, var(--series-1) 14%, transparent); border-radius: 3px; }
+.tip .tgrid small { color: var(--muted); font-size: 10px; margin-left: 3px; }
 .more { display: block; margin: 12px auto; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); cursor: pointer; font: inherit; }
 .empty { padding: 32px; text-align: center; color: var(--muted); }
 
