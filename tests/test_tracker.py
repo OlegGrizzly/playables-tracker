@@ -1,9 +1,14 @@
+import contextlib
 import datetime as dt
+import io
 import json
+import os
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tracker"))
@@ -168,6 +173,94 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(g["est"], 1)
         self.assertIsNone(g["mom"])
         self.assertIsNone(g["d1"])
+
+
+class TelegramDeliveryTest(unittest.TestCase):
+    """Сбой доставки одному получателю не должен задевать остальных и терять состояние."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d = Path(self.tmp.name)
+        self.data, self.state = d / "data.json", d / "sent.json"
+        game = {"id": "NEW1", "n": "New", "p": "S", "g": "Arcade", "off": 0, "s": [5000], "q": 100,
+                "age": 2, "peer": 0.99, "plays": 5000, "hot": 50.0, "rate": 2500.0, "est": 1, "lt": 0}
+        self.data.write_text(json.dumps({"updated": "2026-11-05", "dates": ["2026-11-05"], "games": [game]}))
+        self.state.write_text("{}")  # не первый запуск
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def fake_urlopen(self, blocked=(), down=False):
+        self.calls = []
+
+        def _open(req, timeout=None):
+            chat = dict(p.split("=", 1) for p in req.data.decode().split("&"))["chat_id"]
+            self.calls.append(chat)
+            if down:
+                raise OSError("network down")
+            if chat in blocked:
+                raise urllib.error.HTTPError(
+                    req.full_url, 403, "Forbidden", None,
+                    io.BytesIO(b'{"ok":false,"description":"Forbidden: bot was blocked by the user"}'))
+            return io.BytesIO(b'{"ok":true}')
+        return _open
+
+    def run_main(self, urlopen, *extra):
+        env = {"TELEGRAM_BOT_TOKEN": "SECRET-TOKEN", "TELEGRAM_CHAT_ID": "111,222"}
+        out = io.StringIO()
+        argv = ["alerts.py", "--data", str(self.data), "--state", str(self.state), *extra]
+        with mock.patch.dict(os.environ, env), mock.patch.object(sys, "argv", argv), \
+                mock.patch("urllib.request.urlopen", urlopen), contextlib.redirect_stdout(out):
+            code = alerts.main()
+        return code, out.getvalue()
+
+    def sent_state(self):
+        return json.loads(self.state.read_text())
+
+    def test_all_delivered(self):
+        code, _ = self.run_main(self.fake_urlopen())
+        self.assertEqual(code, 0)
+        self.assertEqual(self.calls.count("111"), self.calls.count("222"))
+        self.assertIn("breakout:NEW1", self.sent_state())
+
+    def test_first_chat_blocked_second_still_gets_it(self):
+        code, out = self.run_main(self.fake_urlopen(blocked={"111"}))
+        self.assertIn("222", self.calls)  # второй получил, хотя первый упал
+        self.assertEqual(code, 1)  # о сбое сообщаем
+        self.assertIn("bot was blocked", out)
+        self.assertIn("breakout:NEW1", self.sent_state())  # без дублей тому, кто получил
+
+    def test_nobody_delivered_is_retried_next_run(self):
+        code, _ = self.run_main(self.fake_urlopen(down=True))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.sent_state(), {})  # сигнал не потерян
+
+    def test_token_not_leaked_in_errors(self):
+        def boom(req, timeout=None):
+            raise OSError(f"failed {req.full_url}")
+        _, out = self.run_main(boom)
+        self.assertNotIn("SECRET-TOKEN", out)
+        self.assertIn("***", out)
+
+    def test_rate_limit_retried_once(self):
+        calls = []
+
+        def _open(req, timeout=None):
+            calls.append(1)
+            if len(calls) == 1:
+                raise urllib.error.HTTPError(
+                    req.full_url, 429, "Too Many", None,
+                    io.BytesIO(b'{"ok":false,"parameters":{"retry_after":1}}'))
+            return io.BytesIO(b'{"ok":true}')
+        with mock.patch("urllib.request.urlopen", _open), mock.patch("time.sleep") as sl:
+            failed = alerts.send_telegram("T", ["111"], "hi")
+        self.assertEqual(failed, {})
+        sl.assert_called_once_with(1)
+
+    def test_test_mode_reports_failure(self):
+        code, out = self.run_main(self.fake_urlopen(blocked={"222"}), "--test")
+        self.assertEqual(code, 1)
+        self.assertIn("1 из 2", out)
 
 
 if __name__ == "__main__":

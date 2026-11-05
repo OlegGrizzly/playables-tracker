@@ -30,6 +30,8 @@ import json
 import os
 import statistics
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -168,16 +170,50 @@ def render(signals: list[dict], data: dict, dash: str | None) -> list[str]:
     return msgs
 
 
-def send_telegram(token: str, chat_ids: list[str], text: str) -> None:
-    for chat in chat_ids:
-        body = urllib.parse.urlencode({
-            "chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": "true",
-        }).encode()
-        req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body)
+def _send_one(token: str, chat: str, text: str, retry_429: bool = True) -> None:
+    body = urllib.parse.urlencode({
+        "chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": "true",
+    }).encode()
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body)
+    try:
         with urllib.request.urlopen(req, timeout=30) as r:
             res = json.load(r)
-            if not res.get("ok"):
-                raise RuntimeError(f"Telegram: {res}")
+    except urllib.error.HTTPError as exc:
+        try:
+            res = json.load(exc)
+        except Exception:  # noqa: BLE001
+            res = {"description": f"HTTP {exc.code}"}
+        if exc.code == 429 and retry_429:  # Telegram просит подождать
+            wait = (res.get("parameters") or {}).get("retry_after", 5)
+            time.sleep(min(int(wait), 30))
+            return _send_one(token, chat, text, retry_429=False)
+        raise RuntimeError(res.get("description") or f"HTTP {exc.code}") from None
+    if not res.get("ok"):
+        raise RuntimeError(res.get("description") or "ok=false")
+
+
+def send_telegram(token: str, chat_ids: list[str], text: str) -> dict[str, str]:
+    """Шлёт каждому получателю отдельно: сбой одного не мешает остальным.
+    Возвращает {chat_id: ошибка} для тех, кому доставить не удалось."""
+    failed: dict[str, str] = {}
+    for chat in chat_ids:
+        try:
+            _send_one(token, chat, text)
+        except Exception as exc:  # noqa: BLE001 — один получатель не должен ронять рассылку
+            failed[chat] = str(exc).replace(token, "***")
+    return failed
+
+
+def deliver(msgs: list[str], token: str, chats: list[str]) -> tuple[int, list[str]]:
+    """Рассылает сообщения. -> (доставлено хотя бы одному получателю, список ошибок)."""
+    delivered = 0
+    errors: list[str] = []
+    for i, m in enumerate(msgs, 1):
+        failed = send_telegram(token, chats, m)
+        if len(failed) < len(chats):
+            delivered += 1
+        errors += [f"сообщение {i}, чат {c}: {e}" for c, e in failed.items()]
+    return delivered, errors
 
 
 def main() -> int:
@@ -197,13 +233,15 @@ def main() -> int:
         data = json.loads(args.data.read_text(encoding="utf-8"))
         dash = os.environ.get("DASHBOARD_URL") or ""
         active = sum(1 for g in data["games"] if not g.get("rm"))
-        send_telegram(token, chats, (
+        failed = send_telegram(token, chats, (
             "✅ <b>Playables Tracker подключён</b>\n\n"
             f"Данные на {data['updated']}, снимков: {len(data['dates'])}, игр: {active}.\n"
             "Сюда будут приходить резкие пики, залетающие новинки и новые игры в топ-10 Hot."
             + (f'\n\n<a href="{html.escape(dash)}">Открыть дашборд</a>' if dash else "")))
-        print(f"Тестовое сообщение отправлено в {len(chats)} чат(а)")
-        return 0
+        print(f"Тестовое сообщение отправлено: {len(chats) - len(failed)} из {len(chats)} чатов")
+        for c, e in failed.items():
+            print(f"Не доставлено, чат {c}: {e}")
+        return 1 if failed else 0
 
     data = json.loads(args.data.read_text(encoding="utf-8"))
     sent = json.loads(args.state.read_text(encoding="utf-8")) if args.state.exists() else {}
@@ -228,14 +266,22 @@ def main() -> int:
         return 0
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chats = [c.strip() for c in os.environ.get("TELEGRAM_CHAT_ID", "").split(",") if c.strip()]
+    errors: list[str] = []
     if msgs and token and chats:
-        for m in msgs:
-            send_telegram(token, chats, m)
-        print(f"Отправлено сообщений: {len(msgs)}")
+        delivered, errors = deliver(msgs, token, chats)
+        print(f"Отправлено сообщений: {delivered} из {len(msgs)}")
+        for e in errors:
+            print(f"Не доставлено — {e}")
+        if not delivered:
+            # Никто ничего не получил (например, Telegram недоступен): не запоминаем,
+            # чтобы эти сигналы ушли при следующем запуске.
+            print("Ни одно сообщение не доставлено — сигналы останутся на следующий запуск.")
+            return 1
     elif msgs:
         print("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID не заданы — только лог.")
 
-    # Запоминаем только то, что реально ушло (или первый запуск / нет токена — тоже, чтобы не копить).
+    # Запоминаем отправленное (а также первый запуск и работу без токена — чтобы не копить).
+    # При частичной доставке тоже запоминаем: иначе тот, кто получил, получит дубль.
     for s in signals:
         sent[f"{s['type']}:{s['g']['id']}"] = today
     # чистим старое
@@ -243,7 +289,7 @@ def main() -> int:
     sent = {k: v for k, v in sent.items() if k.startswith("breakout:") or dt.date.fromisoformat(v) >= cutoff}
     args.state.parent.mkdir(parents=True, exist_ok=True)
     args.state.write_text(json.dumps(sent, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-    return 0
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":

@@ -47,8 +47,12 @@ jobs:
         if: ${{ !inputs.test_telegram }}
         run: python3 tracker/build.py
 
+      # Сбой уведомлений не должен мешать сохранить снимок: шаг коммита выполнится,
+      # а весь запуск пометит упавшим последний шаг — GitHub пришлёт письмо.
       - name: Уведомления о пиках
+        id: alerts
         if: ${{ !inputs.test_telegram }}
+        continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
@@ -71,4 +75,10 @@ jobs:
             echo "Пуш не удался (попытка $i), повтор через $((i * 15)) с"
             sleep $((i * 15))
           done
+          exit 1
+
+      - name: Сообщить о сбое уведомлений
+        if: ${{ steps.alerts.outcome == 'failure' }}
+        run: |
+          echo "::error::Уведомления доставлены не всем — подробности в шаге «Уведомления о пиках». Данные сохранены."
           exit 1
