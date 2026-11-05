@@ -160,6 +160,16 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(g["FLAT"]["prec"], 1_000)
         self.assertLessEqual(g["FLAT"]["rate"], 1_000)
 
+    def test_flat_big_game_ranks_below_measured_growth(self):
+        start = dt.date(2026, 11, 1)
+        out = self.run_days(start, 5, [
+            ("BIG", "Big flat", start - dt.timedelta(days=300), "S", lambda k, day: 50_000_000),  # +0, шаг 1M
+            ("NEWG", "New real", start - dt.timedelta(days=1), "S", lambda k, day: 30_000 * (k + 1)),  # +30K/день
+        ])
+        g = {x["id"]: x for x in out["games"]}
+        self.assertEqual(g["BIG"]["lt"], 1)
+        self.assertLess(g["BIG"]["prRate"], g["NEWG"]["prRate"])
+
     def test_old_snapshot_not_overwritten(self):
         bg = [(f"G{i}", "g", 100 + i, 20260101, "S") for i in range(3)]
         collect.collect(self.dir, html=page("2026-11-05", bg))

@@ -295,6 +295,7 @@ function chartBase(el) {
         backgroundColor: surf, titleColor: txt, bodyColor: txt, borderColor: border, borderWidth: 1, padding: 8,
         filter: it => !String(it.dataset.label).startsWith('_'),
         callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.chart.options.indexAxis === 'y' ? c.parsed.x : c.parsed.y)}` },
+        displayColors: false,
       },
     },
     scales: {
@@ -320,6 +321,14 @@ function peerBandDatasets(el, maxAge) {
     { label: 'Топ-10% ровесников', data: pts('p90'), borderColor: muted, borderDash: [1, 3], borderWidth: 1.5, pointRadius: 0 },
   ];
 }
+function curveAt(key, age) {
+  const c = S.data.curve, A = c.age, V = c[key];
+  if (!A.length || age < A[0]) return null;
+  if (age >= A[A.length - 1]) return V[V.length - 1];
+  let i = 0; while (A[i + 1] < age) i++;
+  const t = (age - A[i]) / (A[i + 1] - A[i]);
+  return V[i] + (V[i + 1] - V[i]) * t;
+}
 function agePoints(g) {
   if (!g.pub) return [];
   const p0 = toDay(g.pub);
@@ -331,16 +340,33 @@ function ageChart(canvas, games, el) {
   const base = chartBase(el);
   base.interaction = { mode: 'nearest', axis: 'x', intersect: false };
   base.plugins.legend.display = true;
+  // подсказка — по точкам самих игр (ровесники в ней подтягиваются на тот же возраст)
+  // точки игр — в теле подсказки; если под курсором только кривая ровесников — показываем её
+  base.plugins.tooltip.filter = (it, idx, all) => it.datasetIndex >= 4 || !all.some(x => x.datasetIndex >= 4);
   base.plugins.tooltip.callbacks = {
-    title: items => `Возраст ${items[0].parsed.x} дн`,
-    label: c => ` ${c.dataset.label}: ${fmt(c.parsed.y)}`,
+    title: items => items.length ? `Возраст ${Math.round(items[0].parsed.x)} дн` : '',
+    label: c => c.datasetIndex >= 4 ? ` ${c.dataset.label}: ${fmt(c.parsed.y)}` : '',
+    afterBody: items => {
+      if (!items.length) return [];
+      const age = items[0].parsed.x, p50 = curveAt('p50', age), p90 = curveAt('p90', age), p25 = curveAt('p25', age), p75 = curveAt('p75', age);
+      if (p50 == null) return [];
+      const mine = items.filter(it => it.datasetIndex >= 4);
+      const lines = [mine.length ? '' : null, `Ровесники (${Math.round(age)} дн):`, ` медиана ${fmt(p50)} · топ-10% от ${fmt(p90)}`, ` середина 25–75%: ${fmt(p25)}–${fmt(p75)}`].filter(x => x != null);
+      for (const it of mine) {
+        const v = it.parsed.y, rel = v / p50;
+        lines.push(` ${it.dataset.label}: ${rel >= 1 ? '×' + (rel >= 10 ? Math.round(rel) : rel.toFixed(1)) + ' к медиане' : Math.round(rel * 100) + '% от медианы'}`);
+      }
+      return lines;
+    },
   };
+  // пунктирная вертикаль под курсором, чтобы было видно, какую точку показываем
+  base.plugins.tooltip.mode = 'nearest';
   base.scales.x = { ...base.scales.x, type: 'linear', min: 0, max: maxAge, title: { display: true, text: 'дней с публикации', color: cssVar('--muted', el) } };
   base.scales.y = { ...base.scales.y, type: 'logarithmic', ticks: { ...base.scales.y.ticks, callback: v => { const l = Math.log10(v); return Math.abs(l - Math.round(l)) < 1e-9 ? fmt(v) : ''; } } };
   const ds = peerBandDatasets(el, maxAge);
   games.forEach((g, i) => {
     const pts = agePoints(g);
-    ds.push({ label: g.n, data: pts, borderColor: cols[i % 4], backgroundColor: cols[i % 4], borderWidth: 2, pointRadius: pts.length < 15 ? 4 : 0, pointHoverRadius: 5, tension: 0 });
+    ds.push({ label: g.n, data: pts, borderColor: cols[i % 4], backgroundColor: cols[i % 4], borderWidth: 2, pointRadius: pts.length < 40 ? 4 : 2, pointHoverRadius: 6, pointHitRadius: 12, tension: 0 });
   });
   return new Chart(canvas, { type: 'line', data: { datasets: ds }, options: base });
 }
@@ -429,11 +455,19 @@ function render() {
         const base = chartBase(el), cols = seriesColors(el);
         base.plugins.legend.display = true;
         base.scales.y.type = 'logarithmic';
+        base.plugins.tooltip.callbacks.title = it => fmtDate(S.data.dates[it[0].dataIndex]);
+        base.plugins.tooltip.callbacks.label = c => {
+          const g = games[c.datasetIndex], j = c.dataIndex, v = g.s[j - g.off];
+          if (v == null) return ` ${g.n}: —`;
+          let prev = null, pj = j - 1; while (pj >= g.off && (prev = g.s[pj - g.off]) == null) pj--;
+          const d = prev == null ? null : v - prev;
+          return ` ${g.n}: ${fmt(v)}${d == null ? '' : ` (${d > 0 ? '+' : ''}${fmt(d)} к пред. снимку)`}`;
+        };
         S.viewCharts.push(new Chart($('#cDates'), {
           type: 'line',
           data: {
             labels: S.data.dates.map(d => fmtDate(d, false)),
-            datasets: games.map((g, i) => ({ label: g.n, data: S.data.dates.map((_, j) => { const v = g.s[j - g.off]; return v == null ? null : v; }), borderColor: cols[i], backgroundColor: cols[i], borderWidth: 2, pointRadius: 0, spanGaps: true })),
+            datasets: games.map((g, i) => ({ label: g.n, data: S.data.dates.map((_, j) => { const v = g.s[j - g.off]; return v == null ? null : v; }), borderColor: cols[i], backgroundColor: cols[i], borderWidth: 2, pointRadius: S.data.dates.length < 40 ? 3 : 2, pointHoverRadius: 5, pointHitRadius: 10, spanGaps: true })),
           },
           options: base,
         }));
@@ -510,9 +544,15 @@ function openGame(id, push = true) {
   const c1 = cssVar('--series-1', dr);
   const b1 = chartBase(dr);
   b1.plugins.tooltip.callbacks.title = it => fmtDate(pts[it[0].dataIndex].date);
+  b1.plugins.tooltip.callbacks.label = c => ` Всего: ${fmt(c.parsed.y)}`;
+  b1.plugins.tooltip.callbacks.afterBody = it => {
+    const i = it[0].dataIndex; if (i === 0) return [' первый снимок'];
+    const gap = toDay(pts[i].date) - toDay(pts[i - 1].date), d = pts[i].v - pts[i - 1].v;
+    return [` к ${fmtDate(pts[i - 1].date, false)}: ${d > 0 ? '+' : ''}${fmt(d)}${gap > 1 ? ` за ${gap} дн` : ''}${d === 0 ? ` (меньше шага ${fmt(g.q)})` : ''}`];
+  };
   S.charts.push(new Chart($('#dTot'), {
     type: 'line',
-    data: { labels: pts.map(p => fmtDate(p.date, false)), datasets: [{ label: 'Плеев всего', data: pts.map(p => p.v), borderColor: c1, backgroundColor: c1, borderWidth: 2, pointRadius: pts.length < 20 ? 3 : 0, tension: 0 }] },
+    data: { labels: pts.map(p => fmtDate(p.date, false)), datasets: [{ label: 'Плеев всего', data: pts.map(p => p.v), borderColor: c1, backgroundColor: c1, borderWidth: 2, pointRadius: pts.length < 40 ? 3 : 2, pointHoverRadius: 5, pointHitRadius: 10, tension: 0 }] },
     options: b1,
   }));
   const deltas = [];
@@ -522,7 +562,8 @@ function openGame(id, push = true) {
   }
   const b2 = chartBase(dr);
   b2.plugins.tooltip.callbacks.title = it => fmtDate(deltas[it[0].dataIndex].date);
-  b2.plugins.tooltip.callbacks.label = c => ` +${fmt(c.parsed.y)} в день${deltas[c.dataIndex].gap > 1 ? ` (среднее за ${deltas[c.dataIndex].gap} дн)` : ''}`;
+  b2.plugins.tooltip.callbacks.label = c => { const d = deltas[c.dataIndex]; return d.v === 0 ? ` 0 — число не изменилось (прирост меньше шага ${fmt(g.q)})` : ` +${fmt(c.parsed.y)} в день${d.gap > 1 ? ` (среднее за ${d.gap} дн)` : ''}`; };
+  b2.plugins.tooltip.callbacks.afterBody = it => { const i = it[0].dataIndex; return [` всего: ${fmt(pts[i + 1].v)} (${fmtDate(pts[i].date, false)} → ${fmtDate(pts[i + 1].date, false)})`]; };
   b2.scales.y.beginAtZero = true;
   S.charts.push(new Chart($('#dDay'), {
     type: 'bar',
