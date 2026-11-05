@@ -51,6 +51,28 @@
 
 Запустить сбор вручную: Actions → «Сбор статистики Playables» → Run workflow (галочку теста не ставить).
 
+## Внешний планировщик (основной запуск)
+
+Расписание GitHub Actions ненадёжно: в первые дни GitHub выполнял 2 плановых запуска из ~10.
+Поэтому сбор запускает внешний планировщик **cron-job.org** через GitHub API, а встроенное
+расписание остаётся запасным.
+
+Настройка задания на cron-job.org:
+
+| Поле | Значение |
+|---|---|
+| URL | `https://api.github.com/repos/OlegGrizzly/playables-tracker/actions/workflows/collect.yml/dispatches` |
+| Метод | `POST` |
+| Расписание | каждые 2 часа (минута — не 0, например 23) |
+| Заголовок `Authorization` | `Bearer <токен>` |
+| Заголовок `Accept` | `application/vnd.github+json` |
+| Заголовок `Content-Type` | `application/json` |
+| Тело запроса | `{"ref":"main"}` |
+
+Токен — fine-grained PAT (Settings → Developer settings → Fine-grained tokens): Repository access —
+только `playables-tracker`, Permissions → Repository → **Actions: Read and write**, остальное не нужно.
+Успешный ответ GitHub — `204 No Content`. При ошибке cron-job.org шлёт письмо.
+
 Настройка:
 1. В Telegram написать [@BotFather](https://t.me/BotFather) → `/newbot` → получить токен.
 2. Написать боту любое сообщение, затем открыть `https://api.telegram.org/bot<ТОКЕН>/getUpdates`
