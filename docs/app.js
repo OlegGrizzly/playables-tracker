@@ -552,6 +552,32 @@ function setTab(tab) {
   window.scrollTo({ top: 0 });
 }
 
+/* ---------- статус сбора (docs/status.json пишет workflow при каждом запуске) ---------- */
+function ago(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 1) return 'только что';
+  if (m < 60) return `${m} ${plural(m, 'минуту', 'минуты', 'минут')} назад`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h} ${plural(h, 'час', 'часа', 'часов')} назад`;
+  const d = Math.floor(h / 24);
+  return `${d} ${plural(d, 'день', 'дня', 'дней')} назад`;
+}
+async function showRunStatus() {
+  const el = $('#run');
+  let st;
+  try { st = await (await fetch('status.json', { cache: 'no-cache' })).json(); } catch { return; }
+  const t = new Date(st.run_at);
+  if (Number.isNaN(t.getTime())) return;
+  const diff = Date.now() - t;
+  const stale = diff > 5 * 3600e3; // запуски каждые 2 часа; 5 часов без запуска — тревога
+  const cls = !st.ok ? 'bad' : stale ? 'warn' : 'ok';
+  const icon = !st.ok ? '✖' : stale ? '⚠' : '●';
+  const when = t.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const what = !st.ok ? 'сбор упал' : stale ? 'давно не запускался' : (st.snapshot ? `снимок ${fmtDate(st.snapshot)}` : 'новых данных нет');
+  el.innerHTML = `<a class="run ${cls}" href="${esc(st.run_url)}" target="_blank" rel="noopener" title="Последний запуск сбора · открыть в GitHub Actions">${icon} Сбор: ${when} (${ago(diff)}) · ${what} · ${st.trigger === 'cron' ? 'по расписанию' : 'вручную'}</a>`;
+  el.hidden = false;
+}
+
 /* ---------- запуск ---------- */
 async function init() {
   saveCmp();
@@ -570,6 +596,7 @@ async function init() {
 
   const n = data.dates.length;
   $('#meta').textContent = `Данные на ${fmtDate(data.updated)} · снимков: ${n} (с ${fmtDate(data.dates[0])}) · игр в каталоге: ${S.games.filter(g => !g.rm).length}`;
+  showRunStatus();
   if (n < 11) {
     const w = $('#warn');
     w.hidden = false;

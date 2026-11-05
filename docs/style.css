@@ -57,6 +57,11 @@ a { color: var(--series-1); }
 
 .top { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .sub { color: var(--text-secondary); font-size: 13px; }
+.run { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+.run:hover { text-decoration: underline; }
+.run.ok { color: var(--up); }
+.run.warn { color: #c98500; }
+.run.bad { color: var(--down); }
 #q {
   flex: 0 1 380px; min-width: 220px;
   padding: 9px 12px; border-radius: 8px;

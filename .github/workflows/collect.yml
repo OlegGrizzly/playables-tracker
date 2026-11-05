@@ -74,6 +74,31 @@ jobs:
 
       # Тоже при любом исходе: сохраняем всё, что успели, и отметку о предупреждении,
       # иначе при падающем сборе предупреждение уходило бы каждые 2 часа
+      # Статус последнего запуска для дашборда — пишется при любом исходе,
+      # чтобы на сайте было видно, что сбор запускается и когда
+      - name: Статус запуска для дашборда
+        if: ${{ !cancelled() && !inputs.test_telegram }}
+        env:
+          COLLECT_OUTCOME: ${{ steps.collect.outcome }}
+          ALERTS_OUTCOME: ${{ steps.alerts.outcome }}
+          SNAPSHOT_DATE: ${{ steps.collect.outputs.date }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import datetime as dt, json, os
+          ok = os.environ["COLLECT_OUTCOME"] == "success"
+          json.dump({
+            "run_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "ok": ok,
+            "collect": os.environ["COLLECT_OUTCOME"],
+            "alerts": os.environ["ALERTS_OUTCOME"],
+            "snapshot": os.environ.get("SNAPSHOT_DATE") or None,
+            "trigger": "cron" if os.environ["EVENT"] == "schedule" else "manual",
+            "run_url": os.environ["RUN_URL"],
+          }, open("docs/status.json", "w"), ensure_ascii=False, indent=1)
+          PY
+
       - name: Закоммитить данные
         if: ${{ !cancelled() && !inputs.test_telegram }}
         env:
@@ -81,12 +106,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data docs/data.json docs/index.html
+          git add data docs/data.json docs/index.html docs/status.json
           if git diff --cached --quiet; then
             echo "Изменений нет"
             exit 0
           fi
-          if [ -n "$SNAPSHOT_DATE" ]; then MSG="снимок $SNAPSHOT_DATE"; else MSG="состояние уведомлений"; fi
+          # новых данных нет — коммитим только статус (мелкий коммит каждые 2 часа)
+          if git diff --cached --quiet -- data docs/data.json docs/index.html; then MSG="статус запуска";
+          elif [ -n "$SNAPSHOT_DATE" ]; then MSG="снимок $SNAPSHOT_DATE"; else MSG="состояние уведомлений"; fi
           git commit -m "chore(data): $MSG"
           for i in 1 2 3; do
             git pull --rebase --quiet origin main && git push && exit 0
