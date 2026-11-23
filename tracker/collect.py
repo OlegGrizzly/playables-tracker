@@ -2,7 +2,8 @@
 """Сборщик снимков каталога YouTube Playables.
 
 Основной источник — каталог YouTube Playables. Снимок датируется днём
-сбора (UTC). HTML playables.games можно передать для локальной отладки.
+сбора (UTC). Если прямой каталог недоступен или неполон, используем
+снимок playables.games с датой, указанной самим источником.
 История хранится в data/snapshots, метаданные — в data/games.json.
 
 Только стандартная библиотека Python — без зависимостей.
@@ -29,6 +30,7 @@ YOUTUBE_HEADERS = {
 }
 MAX_YOUTUBE_PAGES = 100
 MIN_PREVIOUS_COVERAGE = 0.75
+SOURCE_URL = "https://playables.games/app/"
 NEW_URL = "https://playables.games/new/"  # «Added <дата>» — когда игра появилась в каталоге
 USER_AGENT = "Mozilla/5.0 (compatible; PlayablesTracker/1.0; daily snapshot)"
 MIN_GAMES = 500  # защита от записи «пустого» снимка, если вёрстка сломалась
@@ -309,40 +311,57 @@ def load_added(html: str, new_html: str | None) -> dict[str, str]:
         return {}
 
 
+def check_coverage(games: list[dict], previous_ids: set[str], source: str) -> None:
+    ids = {game["id"] for game in games}
+    if len(ids) < MIN_GAMES:
+        raise ParseError(f"Каталог {source} слишком мал: {len(ids)} игр")
+    overlap = len(ids & previous_ids)
+    if overlap < len(previous_ids) * MIN_PREVIOUS_COVERAGE:
+        raise ParseError(f"{source}: всего {len(ids)} игр, из них {overlap} "
+                         f"из {len(previous_ids)} игр предыдущего снимка")
+
+
 def collect(data_dir: Path, html: str | None = None, today: str | None = None,
             new_html: str | None = None) -> dict:
     snap_dir = data_dir / "snapshots"
     latest = latest_snapshot_date(snap_dir)
-    youtube = html is None
-    if youtube:
-        data_date = today or dt.datetime.now(dt.timezone.utc).date().isoformat()
-        if latest and data_date <= latest:
+    network = html is None
+    youtube = network
+    run_date = today or dt.datetime.now(dt.timezone.utc).date().isoformat()
+    previous_ids = set()
+    if network and latest:
+        with (snap_dir / f"{latest}.csv").open(encoding="utf-8", newline="") as snapshot:
+            previous_ids = {row["id"] for row in csv.DictReader(snapshot)}
+        if run_date <= latest:
             print(f"Снимок за {latest} уже сохранён.")
-            with (snap_dir / f"{latest}.csv").open(encoding="utf-8", newline="") as snapshot:
-                count = sum(1 for _ in csv.DictReader(snapshot))
-            return {"date": latest, "changed": False, "games": count, "new": []}
-        games = fetch_youtube_catalog()
-        if len(games) < MIN_GAMES:
-            raise ParseError(f"Каталог YouTube слишком мал: {len(games)} игр")
-        if latest:
-            with (snap_dir / f"{latest}.csv").open(encoding="utf-8", newline="") as snapshot:
-                previous_ids = {row["id"] for row in csv.DictReader(snapshot)}
-            known_games = {game["id"] for game in games} & previous_ids
-            if len(known_games) < len(previous_ids) * MIN_PREVIOUS_COVERAGE:
-                raise ParseError(
-                    f"Каталог YouTube содержит только {len(known_games)} "
-                    f"из {len(previous_ids)} игр предыдущего снимка"
-                )
+            return {"date": latest, "changed": False, "games": len(previous_ids), "new": []}
+
+    if youtube:
+        try:
+            games = fetch_youtube_catalog()
+            check_coverage(games, previous_ids, "YouTube")
+        except (RuntimeError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            print(f"Прямой сбор отклонён: {exc}. Проверяю playables.games.", file=sys.stderr)
+            youtube = False
+            html = fetch(SOURCE_URL)
+
+    if youtube:
+        data_date = run_date
         added = {}
     else:
         data_date, games = parse_catalog(html)
-        added = load_added(html, new_html) if new_html is not None else {}
         if not data_date:
-            data_date = today or dt.datetime.now(dt.timezone.utc).date().isoformat()
+            if network:
+                raise ParseError("playables.games не указал дату резервного снимка")
+            data_date = run_date
             print(f"Метка «updated» не найдена, использую дату запуска {data_date}", file=sys.stderr)
-        if latest and data_date < latest:
+        if latest and (data_date < latest or (network and data_date == latest)):
             print(f"Источник отдаёт данные за {data_date}, а у нас уже есть {latest} — пропускаю.")
-            return {"date": data_date, "changed": False, "games": len(games), "new": []}
+            return {"date": latest if network else data_date, "changed": False,
+                    "games": len(previous_ids) if network else len(games), "new": []}
+        if network:
+            check_coverage(games, previous_ids, "playables.games")
+        added = load_added(html, new_html) if (network or new_html is not None) else {}
 
     snap_dir.mkdir(parents=True, exist_ok=True)
     meta, new_ids = update_games_meta(
