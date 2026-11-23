@@ -7,7 +7,11 @@ permissions:
 jobs:
   compare:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
       - run: python3 tracker/diagnose_sorts.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playables-export
+          path: playables.csv
