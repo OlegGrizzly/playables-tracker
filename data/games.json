@@ -222,7 +222,7 @@
  "Ugkx-SB4exGiqIyWNqs9wV0NZqMMYD5WJcXI": {
   "first_seen": "2026-11-03",
   "genre": "Simulation",
-  "icon": "https://yt3.ggpht.com/ngFLydu_fUGer9e-S0yeKUvaTh1tJpAie0UBt8x6dCaDS_oEN71_W90MIaWDgwHmYuaSsc6cYLOAAw=s512-rw-nd-v1",
+  "icon": "https://yt3.ggpht.com/X71B0_sZoUbN_2cAHyax0z-G9oWsoLVvY_qRDpwaiBj_2gGAZn2soeiKxA1bS-EZCL8C81iOV2-sUw=s512-rw-nd-v1",
   "last_seen": "2026-11-23",
   "name": "Tropic Island Tycoon",
   "published": "2026-08-10",
@@ -2625,6 +2625,17 @@
   "name": "Happy Glass - Draw to Fill",
   "published": "2026-10-05",
   "publisher": "Mediacube",
+  "removed": null
+ },
+ "Ugkx4_uZXr2grIy00WS9VaWs-Se9jYbDbWpj": {
+  "added": "2026-11-23",
+  "first_seen": "2026-11-23",
+  "genre": null,
+  "icon": "https://yt3.ggpht.com/Gyw1xtAA1cBow_vozReEDQNhwBD_Ay-mrD46d1vuuIv8JKdtWirzk_7R3k_mguUlmPsBuXYt9ODFSA=s512-rw-nd-v1",
+  "last_seen": "2026-11-23",
+  "name": "Cube Shooter: Blast Loop",
+  "published": "2026-11-23",
+  "publisher": "BAZOOKA LIMITED",
   "removed": null
  },
  "Ugkx4aOV4WK9ceiy4HatGWuYLYW4yViBqVd-": {
