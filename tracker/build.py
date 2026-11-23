@@ -335,6 +335,10 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=ROOT / "docs" / "data.json")
     args = ap.parse_args()
     out = build(args.data_dir)
+    cached = {p.stem for p in (args.out.parent / "icons").glob("*.webp")}
+    for game in out["games"]:
+        if game["id"] in cached:
+            game["ic"] = f"icons/{game['id']}.webp"
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     stamp_assets(args.out.parent)

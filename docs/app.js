@@ -107,7 +107,9 @@ function hotHtml(h) {
 }
 function icon(g, size = 88) {
   if (!g.ic) return '<img alt="">';
-  return `<img src="${esc(g.ic)}=s${size}" alt="" loading="lazy" referrerpolicy="no-referrer">`;
+  const src = g.ic.startsWith("https://yt3.ggpht.com/")
+    ? g.ic.replace(/=s\d+[\w-]*$/, "") + "=s" + size : g.ic;
+  return `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer">`;
 }
 function gameCell(g) {
   const tags = (g.age != null && g.age <= 7 ? '<span class="tag">NEW</span>' : '') + (g.rm ? '<span class="tag rm">удалена</span>' : '');
