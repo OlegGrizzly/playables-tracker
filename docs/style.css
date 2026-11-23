@@ -227,3 +227,17 @@ svg.spark .sd circle { opacity: .55; }
 .tip .tr b { text-align: right; font-variant-numeric: tabular-nums; }
 .tip .tr small { grid-column: 1 / -1; color: var(--muted); font-size: 11px; margin-top: -1px; }
 .tip .tsub { margin: 8px 0 2px; padding-top: 6px; border-top: 1px solid var(--grid); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+
+.tip-gap { grid-column: span 2; color: var(--muted); }
+.chart-gap-tip {
+  position: absolute;
+  z-index: 1;
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 12px;
+  pointer-events: none;
+}

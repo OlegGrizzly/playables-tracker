@@ -1,20 +1,9 @@
 #!/usr/bin/env python3
 """Сборщик снимков каталога YouTube Playables.
 
-Источник — https://playables.games/app/: весь каталог встроен в HTML как
-`const DATA=[...]`. Публичного API нет, поэтому раз в день (или чаще) скачиваем
-страницу, достаём массив и сохраняем снимок:
-
-  data/snapshots/YYYY-MM-DD.csv  — id,plays на дату данных источника
-  data/games.json                — метаданные игр (название, издатель, жанр,
-                                   дата публикации, иконка, first/last seen)
-
-Дата снимка берётся из метки сайта «updated YYYY-MM-DD», а не из времени
-запуска: если сайт ещё не обновился, повторный запуск ничего не меняет.
-
-Формат строки DATA (по состоянию на 2026-11):
-  [name, plays, genreIdx, playableId, icon, isNew, removedDate|0,
-   publisher, trendScore, publishedYYYYMMDD|0]
+Основной источник — каталог YouTube Playables. Снимок датируется днём
+сбора (UTC). HTML playables.games можно передать для локальной отладки.
+История хранится в data/snapshots, метаданные — в data/games.json.
 
 Только стандартная библиотека Python — без зависимостей.
 """
@@ -31,7 +20,15 @@ import time
 import urllib.request
 from pathlib import Path
 
-SOURCE_URL = "https://playables.games/app/"
+YOUTUBE_ORIGIN = "https://www.youtube.com"
+YOUTUBE_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cookie": "SOCS=CAI; CONSENT=YES+",
+}
+MAX_YOUTUBE_PAGES = 100
+MIN_PREVIOUS_COVERAGE = 0.75
 NEW_URL = "https://playables.games/new/"  # «Added <дата>» — когда игра появилась в каталоге
 USER_AGENT = "Mozilla/5.0 (compatible; PlayablesTracker/1.0; daily snapshot)"
 MIN_GAMES = 500  # защита от записи «пустого» снимка, если вёрстка сломалась
@@ -122,6 +119,116 @@ MONTHS = {m: i for i, m in enumerate(
     ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
 
 
+def youtube_request(url: str, body: dict | None = None) -> str:
+    headers = dict(YOUTUBE_HEADERS)
+    payload = None
+    if body is not None:
+        headers.update({"Content-Type": "application/json", "Origin": YOUTUBE_ORIGIN})
+        payload = json.dumps(body).encode("utf-8")
+    request = urllib.request.Request(url, data=payload, headers=headers)
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return response.read().decode("utf-8")
+        except OSError as exc:
+            if attempt == 2:
+                raise RuntimeError(f"Запрос к YouTube не удался: {type(exc).__name__}") from None
+            time.sleep(2 ** attempt)
+
+
+def objects(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from objects(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from objects(child)
+
+
+def parse_youtube_card(card: dict) -> dict:
+    url = card["onTap"]["innertubeCommand"]["commandMetadata"]["webCommandMetadata"]["url"]
+    game_id = re.fullmatch(r"/playables/([A-Za-z0-9_-]+)(?:\?.*)?", url)
+    count = re.fullmatch(r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*([KMB]?)\s+plays?",
+                         card.get("metadataText", ""), re.I)
+    if not game_id or not count or not card.get("title"):
+        raise ParseError("Карточка YouTube без ID, названия или счётчика")
+    number, suffix = count.groups()
+    whole, _, fraction = number.replace(",", "").partition(".")
+    multiplier = {"": 1, "K": 1000, "M": 1000000, "B": 1000000000}[suffix.upper()]
+    plays = int(whole + fraction) * multiplier // (10 ** len(fraction))
+
+    fields = {node["label"]: node.get("value") for node in objects(card.get("overflowButton"))
+              if node.get("label") in ("Publisher", "Publish date", "Genre")}
+    publication = re.fullmatch(r"([A-Za-z]{3}) (\d{1,2}), (\d{4})",
+                               fields.get("Publish date") or "")
+    published = None
+    if publication and publication[1] in MONTHS:
+        published = dt.date(int(publication[3]), MONTHS[publication[1]],
+                            int(publication[2])).isoformat()
+    images = card.get("image", {}).get("sources", [])
+    return {
+        "id": game_id[1],
+        "name": card["title"],
+        "plays": plays,
+        "genre": card.get("genre") or fields.get("Genre"),
+        "icon": images[0].get("url") if images else None,
+        "publisher": fields.get("Publisher"),
+        "published": published,
+        "removed": None,
+    }
+
+
+def fetch_youtube_catalog() -> list[dict]:
+    html = youtube_request(f"{YOUTUBE_ORIGIN}/playables?gl=US&hl=en")
+    config = {}
+    for key in ("INNERTUBE_API_KEY", "INNERTUBE_CLIENT_VERSION", "VISITOR_DATA"):
+        match = re.search(r'"' + key + r'"\s*:\s*"([^"]+)"', html)
+        if match:
+            config[key] = match[1]
+    if not all(key in config for key in ("INNERTUBE_API_KEY", "INNERTUBE_CLIENT_VERSION")):
+        raise ParseError("YouTube не вернул настройки клиента Playables")
+
+    endpoint = (f"{YOUTUBE_ORIGIN}/youtubei/v1/browse?key="
+                f"{config['INNERTUBE_API_KEY']}&prettyPrint=false")
+    client = {"clientName": "WEB", "clientVersion": config["INNERTUBE_CLIENT_VERSION"],
+              "hl": "en", "gl": "US", "visitorData": config.get("VISITOR_DATA", "")}
+    query = {"browseId": "FEmini_app_destination"}
+    games = {}
+    seen_tokens = set()
+    for page in range(MAX_YOUTUBE_PAGES):
+        response = json.loads(youtube_request(endpoint, {"context": {"client": client}, **query}))
+        if page == 0:
+            grids = [node["richGridRenderer"]["contents"] for node in objects(response)
+                     if "richGridRenderer" in node]
+        else:
+            grids = [node["appendContinuationItemsAction"]["continuationItems"]
+                     for node in objects(response) if "appendContinuationItemsAction" in node]
+        if len(grids) != 1:
+            raise ParseError(f"Неожиданный ответ каталога YouTube на странице {page + 1}")
+
+        nodes = list(objects(grids[0]))
+        cards = [parse_youtube_card(node["miniGameCardViewModel"]) for node in nodes
+                 if "miniGameCardViewModel" in node]
+        tokens = {node["continuationCommand"]["token"]
+                  for node in objects([item["continuationItemRenderer"] for item in grids[0]
+                                       if "continuationItemRenderer" in item])
+                  if "continuationCommand" in node}
+        if not cards and (page == 0 or tokens):
+            raise ParseError(f"Пустая страница каталога YouTube: {page + 1}")
+        if any(card["id"] in games for card in cards) or len({card["id"] for card in cards}) != len(cards):
+            raise ParseError(f"Повтор карточек на странице каталога YouTube: {page + 1}")
+        games.update((card["id"], card) for card in cards)
+        if not tokens:
+            return list(games.values())
+        if len(tokens) != 1 or tokens & seen_tokens:
+            raise ParseError(f"Некорректное продолжение каталога YouTube: страница {page + 1}")
+        token = tokens.pop()
+        seen_tokens.add(token)
+        query = {"continuation": token}
+    raise ParseError(f"Каталог YouTube не завершился за {MAX_YOUTUBE_PAGES} страниц")
+
+
 def parse_added(new_html: str, slug_to_id: dict[str, str]) -> dict[str, str]:
     """Страница /new/: секции «Added Nov 3, 2026» со ссылками /games/<slug>/ -> {id: дата}."""
     out: dict[str, str] = {}
@@ -144,18 +251,24 @@ def latest_snapshot_date(snap_dir: Path) -> str | None:
     return dates[-1] if dates else None
 
 
+def atomic_write(path: Path, content: str) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.replace(path)
+
+
 def write_snapshot(path: Path, games: list[dict]) -> bool:
     """Пишет снимок; возвращает True, если содержимое изменилось."""
     lines = ["id,plays"] + [f"{g['id']},{g['plays']}" for g in sorted(games, key=lambda g: g["id"])]
     content = "\n".join(lines) + "\n"
     if path.exists() and path.read_text(encoding="utf-8") == content:
         return False
-    path.write_text(content, encoding="utf-8")
+    atomic_write(path, content)
     return True
 
 
 def update_games_meta(path: Path, games: list[dict], date: str,
-                      added: dict[str, str] | None = None) -> tuple[dict, list[str]]:
+                      added: dict[str, str] | None = None, *, preserve_missing: bool = False) -> tuple[dict, list[str]]:
     """added — даты появления в каталоге с /new/. Для игр, которых там нет, но которые
     появились у нас уже после старта трекера, дата появления = первый снимок с ними."""
     first_run = not path.exists()
@@ -171,18 +284,14 @@ def update_games_meta(path: Path, games: list[dict], date: str,
                 e["added"] = date
         if g["id"] in added and (not e.get("added") or added[g["id"]] < e["added"]):
             e["added"] = added[g["id"]]
-        e.update(
-            name=g["name"],
-            publisher=g["publisher"],
-            genre=g["genre"],
-            published=g["published"],
-            icon=g["icon"],
-            removed=g["removed"],
-            last_seen=date,
-        )
+        for field in ("name", "publisher", "genre", "published", "icon"):
+            if g[field] or not preserve_missing or field not in e:
+                e[field] = g[field]
+        e["removed"] = g["removed"]
+        e["last_seen"] = date
         if e.get("first_seen", date) > date:
             e["first_seen"] = date
-    path.write_text(json.dumps(meta, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write(path, json.dumps(meta, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     return meta, new_ids
 
 
@@ -202,23 +311,44 @@ def load_added(html: str, new_html: str | None) -> dict[str, str]:
 
 def collect(data_dir: Path, html: str | None = None, today: str | None = None,
             new_html: str | None = None) -> dict:
-    network = html is None
-    html = html if html is not None else fetch(SOURCE_URL)
-    data_date, games = parse_catalog(html)
-    added = load_added(html, new_html) if (network or new_html is not None) else {}
-    if not data_date:
-        data_date = today or dt.datetime.now(dt.timezone.utc).date().isoformat()
-        print(f"⚠️  Метка «updated» не найдена, использую дату запуска {data_date}", file=sys.stderr)
-
     snap_dir = data_dir / "snapshots"
-    snap_dir.mkdir(parents=True, exist_ok=True)
     latest = latest_snapshot_date(snap_dir)
-    if latest and data_date < latest:
-        print(f"Источник отдаёт данные за {data_date}, а у нас уже есть {latest} — пропускаю.")
-        return {"date": data_date, "changed": False, "games": len(games), "new": []}
+    youtube = html is None
+    if youtube:
+        data_date = today or dt.datetime.now(dt.timezone.utc).date().isoformat()
+        if latest and data_date <= latest:
+            print(f"Снимок за {latest} уже сохранён.")
+            with (snap_dir / f"{latest}.csv").open(encoding="utf-8", newline="") as snapshot:
+                count = sum(1 for _ in csv.DictReader(snapshot))
+            return {"date": latest, "changed": False, "games": count, "new": []}
+        games = fetch_youtube_catalog()
+        if len(games) < MIN_GAMES:
+            raise ParseError(f"Каталог YouTube слишком мал: {len(games)} игр")
+        if latest:
+            with (snap_dir / f"{latest}.csv").open(encoding="utf-8", newline="") as snapshot:
+                previous_ids = {row["id"] for row in csv.DictReader(snapshot)}
+            known_games = {game["id"] for game in games} & previous_ids
+            if len(known_games) < len(previous_ids) * MIN_PREVIOUS_COVERAGE:
+                raise ParseError(
+                    f"Каталог YouTube содержит только {len(known_games)} "
+                    f"из {len(previous_ids)} игр предыдущего снимка"
+                )
+        added = {}
+    else:
+        data_date, games = parse_catalog(html)
+        added = load_added(html, new_html) if new_html is not None else {}
+        if not data_date:
+            data_date = today or dt.datetime.now(dt.timezone.utc).date().isoformat()
+            print(f"Метка «updated» не найдена, использую дату запуска {data_date}", file=sys.stderr)
+        if latest and data_date < latest:
+            print(f"Источник отдаёт данные за {data_date}, а у нас уже есть {latest} — пропускаю.")
+            return {"date": data_date, "changed": False, "games": len(games), "new": []}
 
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    meta, new_ids = update_games_meta(
+        data_dir / "games.json", games, data_date, added, preserve_missing=youtube,
+    )
     changed = write_snapshot(snap_dir / f"{data_date}.csv", games)
-    meta, new_ids = update_games_meta(data_dir / "games.json", games, data_date, added)
     active = sum(1 for g in games if not g["removed"])
     print(
         f"Снимок {data_date}: игр {len(games)} (активных {active}), "

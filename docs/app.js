@@ -119,36 +119,59 @@ function points(g) {
   g.s.forEach((v, i) => { if (v != null) out.push({ date: S.data.dates[g.off + i], v }); });
   return out;
 }
+function calendarDays(g, limit = Infinity) {
+  const dates = S.data.dates;
+  const first = toDay(dates[g.off]);
+  const yesterday = Math.floor(Date.now() / dayMs) - 1;
+  const last = Math.max(toDay(dates.at(-1)), yesterday);
+  const start = Math.max(first, last - limit + 1);
+  const observed = new Map(points(g).map(p => [p.date, p.v]));
+  const snapshots = new Set(dates);
+  return Array.from({ length: last - start + 1 }, (_, i) => {
+    const date = new Date((start + i) * dayMs).toISOString().slice(0, 10);
+    return { date, v: observed.get(date) ?? null, snapshot: snapshots.has(date) };
+  });
+}
+function gapReason(day) {
+  return day.snapshot ? 'Нет данных по игре' : 'Нет снимка каталога';
+}
+function intervalText(previous, current, q) {
+  const change = current.v - previous.v;
+  const days = toDay(current.date) - toDay(previous.date);
+  const total = change === 0 ? `0 · <${fmt(q)}` : fmtD(change);
+  return days > 1 ? `${total} за ${fmtDate(previous.date, false)} – ${fmtDate(current.date, false)}` : total;
+}
 const SPARK_W = 96, SPARK_H = 26;
 function sparkXY(pts) {
-  const vs = pts.map(p => p.v), mn = Math.min(...vs), mx = Math.max(...vs);
-  return pts.map((p, i) => [i / (pts.length - 1) * (SPARK_W - 6) + 3, mx === mn ? SPARK_H / 2 : SPARK_H - 3 - (p.v - mn) / (mx - mn) * (SPARK_H - 6)]);
+  const values = pts.filter(p => p.v != null).map(p => p.v);
+  const min = Math.min(...values), max = Math.max(...values);
+  return pts.map((p, i) => [
+    pts.length === 1 ? SPARK_W / 2 : i / (pts.length - 1) * (SPARK_W - 6) + 3,
+    p.v == null ? null : max === min ? SPARK_H / 2 : SPARK_H - 3 - (p.v - min) / (max - min) * (SPARK_H - 6),
+  ]);
 }
 function spark(g) {
-  const pts = points(g).slice(-30);
-  if (pts.length < 2) return '<span class="muted">—</span>';
+  const pts = calendarDays(g, 30);
   const xy = sparkXY(pts);
-  const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  const dots = xy.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2"/>`).join('');
-  return `<svg class="spark" width="${SPARK_W}" height="${SPARK_H}" viewBox="0 0 ${SPARK_W} ${SPARK_H}" aria-hidden="true"><polyline points="${line}" fill="none" stroke="var(--series-1)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/><g class="sd" fill="var(--series-1)">${dots}</g><circle class="sh" r="3.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="1.5" visibility="hidden"/></svg>`;
+  const line = xy.map(([x, y], i) => y == null ? '' :
+    `${i && xy[i - 1][1] != null ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const dots = xy.map(([x, y]) => y == null ? '' :
+    `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2"/>`).join('');
+  return `<svg class="spark" width="${SPARK_W}" height="${SPARK_H}" viewBox="0 0 ${SPARK_W} ${SPARK_H}" aria-hidden="true"><path d="${line}" fill="none" stroke="var(--series-1)" stroke-width="1.5" stroke-linecap="round"/><g class="sd" fill="var(--series-1)">${dots}</g><circle class="sh" r="3.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="1.5" visibility="hidden"/></svg>`;
 }
-// Карточка при наведении на мини-график: по дням — всего и прирост
-function sparkTipHtml(g, hi) {
-  const pts = points(g).slice(-30);
-  let h = `<div class="tt">${esc(g.n)} <span class="muted">· ${pts.length === 1 ? 'снимок' : `${pts.length} ${plural(pts.length, 'снимок', 'снимка', 'снимков')}`}</span></div>`;
-  h += '<div class="tgrid"><span class="th">Дата</span><span class="th">Всего</span><span class="th">Прирост</span>';
-  for (let i = pts.length - 1; i >= 0; i--) {
-    const p = pts[i], prev = pts[i - 1];
-    let d = '';
-    if (prev) {
-      const gap = toDay(p.date) - toDay(prev.date), v = p.v - prev.v;
-      d = v === 0 ? `<span class="muted">0 · &lt;${fmt(g.q)}</span>` : `<span class="${v > 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${fmt(v)}</span>${gap > 1 ? `<small>за ${gap} дн</small>` : ''}`;
-    } else d = '<span class="muted">первый</span>';
-    h += `<span class="${i === hi ? 'hl' : ''}">${fmtDate(p.date, false)}</span><span class="${i === hi ? 'hl' : ''}">${fmt(p.v)}</span><span class="${i === hi ? 'hl' : ''}">${d}</span>`;
-  }
-  h += '</div>';
-  if (points(g).length > 30) h += '<div class="tsub muted">показаны последние 30 снимков</div>';
-  return h;
+function sparkTipHtml(g, pts, hi) {
+  let previous = null;
+  const rows = pts.map((p, i) => {
+    const cls = i === hi ? 'hl' : '';
+    const date = `<span class="${cls}">${fmtDate(p.date, false)}</span>`;
+    if (p.v == null) return `${date}<span class="tip-gap ${cls}">${gapReason(p)}</span>`;
+    const delta = previous ? esc(intervalText(previous, p, g.q)) : '—';
+    previous = p;
+    return `${date}<span class="${cls}">${fmt(p.v)}</span><span class="${cls}">${delta}</span>`;
+  });
+  // Keep the hovered day visible even when the full calendar cannot fit on screen.
+  const start = Math.max(0, Math.min(hi - 3, rows.length - 7));
+  return `<div class="tt">${esc(g.n)}</div><div class="tgrid"><span class="th">Дата</span><span class="th">Всего</span><span class="th">Прирост</span>${rows.slice(start, start + 7).reverse().join('')}</div>`;
 }
 function whyChips(g) {
   const c = [];
@@ -356,7 +379,10 @@ function curveAt(key, age) {
 function agePoints(g) {
   if (!g.pub) return [];
   const p0 = toDay(g.pub);
-  return points(g).map(p => ({ x: Math.max(0, toDay(p.date) - p0), y: Math.max(1, p.v) }));
+  return calendarDays(g).map(p => ({
+    x: Math.max(0, toDay(p.date) - p0),
+    y: p.v == null ? null : Math.max(1, p.v),
+  }));
 }
 function ageChart(canvas, games, el) {
   const cols = seriesColors(el);
@@ -520,6 +546,8 @@ function openGame(id, push = true) {
   if (!g) return;
   if (push) setHash({ g: id });
   destroy(S.charts);
+  const days = calendarDays(g);
+  const gaps = days.filter(day => day.v == null);
   const inCmp = S.cmp.includes(id);
   const at = Object.entries(g.at || {});
   const hotParts = g.hot == null ? '' : `темп ${topPct(g.prRate)} · ровесники ${topPct(g.peer)} · ускорение ${g.prMom == null ? 'нет данных' : topPct(g.prMom)}`;
@@ -547,8 +575,10 @@ function openGame(id, push = true) {
     <div class="stack">
       <div class="card"><h2>Кривая роста против ровесников</h2><div class="chartbox tall"><canvas id="dAge"></canvas></div>
         <div class="note">Ось Y логарифмическая. Выше пунктира — лучше половины игр того же возраста, выше точечной линии — в топ-10%.</div></div>
-      <div class="card"><h2>Всего плеев по дням</h2><div class="chartbox" id="dTotBox"><canvas id="dTot"></canvas></div></div>
-      <div class="card"><h2>Прирост плеев в день</h2><div class="chartbox" id="dDayBox"><canvas id="dDay"></canvas></div>
+      <div class="card"><h2>Всего плеев по дням</h2><div class="chartbox" id="dTotBox"><canvas id="dTot"></canvas><div class="chart-gap-tip" hidden></div></div>
+        ${gaps.length ? `<details class="note"><summary>Пропуски на графике · ${gaps.length} ${plural(gaps.length, 'день', 'дня', 'дней')}</summary><ul>${gaps.map(day => `<li>${fmtDate(day.date)} · ${gapReason(day)}</li>`).join('')}</ul></details>` : ''}
+      </div>
+      <div class="card"><h2>Прирост плеев в день</h2><div class="chartbox" id="dDayBox"><canvas id="dDay"></canvas><div class="chart-gap-tip" hidden></div></div>
         <div class="note">Плеи округлены YouTube (шаг ${fmt(g.q)}), поэтому у больших игр прирост идёт ступеньками.</div></div>
     </div>`;
   const dr = $('#drawer');
@@ -563,38 +593,99 @@ function openGame(id, push = true) {
   });
   if (!window.Chart) return;
   S.charts.push(ageChart($('#dAge'), [g], dr));
-  const pts = points(g);
-  if (pts.length < 2) { noHistory($('#dTotBox'), pts.length); noHistory($('#dDayBox'), pts.length); return; }
   const c1 = cssVar('--series-1', dr);
-  const b1 = chartBase(dr);
-  b1.plugins.tooltip.callbacks.title = it => fmtDate(pts[it[0].dataIndex].date);
-  b1.plugins.tooltip.callbacks.label = c => ` Всего: ${fmt(c.parsed.y)}`;
-  b1.plugins.tooltip.callbacks.afterBody = it => {
-    const i = it[0].dataIndex; if (i === 0) return [' первый снимок'];
-    const gap = toDay(pts[i].date) - toDay(pts[i - 1].date), d = pts[i].v - pts[i - 1].v;
-    return [` к ${fmtDate(pts[i - 1].date, false)}: ${d > 0 ? '+' : ''}${fmt(d)}${gap > 1 ? ` за ${gap} дн` : ''}${d === 0 ? ` (меньше шага ${fmt(g.q)})` : ''}`];
+  const labels = days.map(p => fmtDate(p.date, false));
+  const previous = [];
+  let lastPoint = null;
+  for (const day of days) {
+    previous.push(lastPoint);
+    if (day.v != null) lastPoint = day;
+  }
+
+  const totals = chartBase(dr);
+  totals.scales.x.offset = true;
+  totals.interaction.intersect = true;
+  totals.plugins.tooltip.callbacks = {
+    title: items => fmtDate(days[items[0].dataIndex].date),
+    label: c => `Всего: ${fmt(c.parsed.y)}`,
+    afterBody: items => {
+      const i = items[0].dataIndex;
+      return previous[i] ? [`Прирост: ${intervalText(previous[i], days[i], g.q)}`] : [];
+    },
   };
   S.charts.push(new Chart($('#dTot'), {
     type: 'line',
-    data: { labels: pts.map(p => fmtDate(p.date, false)), datasets: [{ label: 'Плеев всего', data: pts.map(p => p.v), borderColor: c1, backgroundColor: c1, borderWidth: 2, pointRadius: pts.length < 40 ? 3 : 2, pointHoverRadius: 5, pointHitRadius: 10, tension: 0 }] },
-    options: b1,
+    data: { labels, datasets: [{ label: 'Плеев всего', data: days.map(p => p.v), spanGaps: false,
+      borderColor: c1, backgroundColor: c1, borderWidth: 2, pointRadius: days.length < 40 ? 3 : 2,
+      pointHoverRadius: 5, pointHitRadius: 8, tension: 0 }] },
+    options: totals,
+    plugins: [calendarGaps(days)],
   }));
-  const deltas = [];
-  for (let i = 1; i < pts.length; i++) {
-    const gap = toDay(pts[i].date) - toDay(pts[i - 1].date);
-    deltas.push({ date: pts[i].date, v: (pts[i].v - pts[i - 1].v) / gap, gap });
-  }
-  const b2 = chartBase(dr);
-  b2.plugins.tooltip.callbacks.title = it => fmtDate(deltas[it[0].dataIndex].date);
-  b2.plugins.tooltip.callbacks.label = c => { const d = deltas[c.dataIndex]; return d.v === 0 ? ` 0 — число не изменилось (прирост меньше шага ${fmt(g.q)})` : ` +${fmt(c.parsed.y)} в день${d.gap > 1 ? ` (среднее за ${d.gap} дн)` : ''}`; };
-  b2.plugins.tooltip.callbacks.afterBody = it => { const i = it[0].dataIndex; return [` всего: ${fmt(pts[i + 1].v)} (${fmtDate(pts[i].date, false)} → ${fmtDate(pts[i + 1].date, false)})`]; };
-  b2.scales.y.beginAtZero = true;
+
+  const deltas = days.map((day, i) => {
+    const prev = previous[i];
+    return day.v != null && prev && toDay(day.date) - toDay(prev.date) === 1 ? day.v - prev.v : null;
+  });
+  const daily = chartBase(dr);
+  daily.scales.y.beginAtZero = true;
+  daily.interaction.intersect = true;
+  daily.plugins.tooltip.callbacks = {
+    title: items => fmtDate(days[items[0].dataIndex].date),
+    label: item => `За сутки: ${fmtD(item.parsed.y)}`,
+  };
   S.charts.push(new Chart($('#dDay'), {
     type: 'bar',
-    data: { labels: deltas.map(p => fmtDate(p.date, false)), datasets: [{ label: 'Прирост', data: deltas.map(p => Math.max(0, p.v)), backgroundColor: c1, borderRadius: 4, barPercentage: 0.85, categoryPercentage: 0.9 }] },
-    options: b2,
+    data: { labels, datasets: [{ label: 'Прирост', data: deltas, backgroundColor: c1,
+      borderRadius: 4, barPercentage: 0.85, categoryPercentage: 0.9 }] },
+    options: daily,
+    plugins: [calendarGaps(days, (day, i) => day.v != null && previous[i] && deltas[i] == null
+      ? `Прирост: ${intervalText(previous[i], day, g.q)}` : '')],
   }));
 }
+function calendarGaps(days, interval = () => '') {
+  return {
+    id: 'calendarGaps',
+    beforeDatasetsDraw(chart) {
+      const { ctx, chartArea: area, scales: { x } } = chart;
+      const width = area.width / days.length;
+      ctx.save();
+      ctx.strokeStyle = cssVar('--muted', chart.canvas);
+      ctx.globalAlpha = 0.25;
+      days.forEach((day, index) => {
+        if (day.v != null) return;
+        const left = x.getPixelForValue(index) - width / 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(left, area.top, width, area.height);
+        ctx.clip();
+        ctx.beginPath();
+        for (let offset = -area.height; offset < width; offset += 6) {
+          ctx.moveTo(left + offset, area.bottom);
+          ctx.lineTo(left + offset + area.height, area.top);
+        }
+        ctx.stroke();
+        ctx.restore();
+      });
+      ctx.restore();
+    },
+    afterEvent(chart, args) {
+      const { event, inChartArea } = args;
+      const tip = chart.canvas.parentElement.querySelector('.chart-gap-tip');
+      const index = Math.round(chart.scales.x.getValueForPixel(event.x));
+      const day = days[index];
+      const text = inChartArea && day ? (day.v == null ? gapReason(day) : interval(day, index)) : '';
+      tip.hidden = !text;
+      if (text) {
+        tip.textContent = `${fmtDate(day.date)} · ${text}`;
+        tip.style.left = `${Math.max(0, Math.min(event.x + 10, chart.width - tip.offsetWidth))}px`;
+        tip.style.top = `${Math.max(0, event.y - tip.offsetHeight - 8)}px`;
+        chart.tooltip.setActiveElements([], { x: event.x, y: event.y });
+        args.changed = true;
+      }
+    },
+  };
+}
+
 function closeGame() {
   destroy(S.charts);
   $('#drawer').hidden = true;
@@ -699,13 +790,17 @@ async function init() {
   const HOVER = '.rt, svg.spark';
   let sparkIdx = -1;
   const sparkHover = (svg, g, e) => {
-    const pts = points(g).slice(-30), r = svg.getBoundingClientRect();
+    const pts = calendarDays(g, 30), r = svg.getBoundingClientRect();
     const fx = (e.clientX - r.left) / r.width * SPARK_W;
     const xy = sparkXY(pts);
     let best = 0; for (let i = 1; i < xy.length; i++) if (Math.abs(xy[i][0] - fx) < Math.abs(xy[best][0] - fx)) best = i;
     const dot = svg.querySelector('.sh');
-    dot.setAttribute('cx', xy[best][0].toFixed(1)); dot.setAttribute('cy', xy[best][1].toFixed(1)); dot.setAttribute('visibility', 'visible');
-    if (best !== sparkIdx) { sparkIdx = best; tip.innerHTML = sparkTipHtml(g, best); }
+    dot.setAttribute('visibility', pts[best].v == null ? 'hidden' : 'visible');
+    if (pts[best].v != null) {
+      dot.setAttribute('cx', xy[best][0].toFixed(1));
+      dot.setAttribute('cy', xy[best][1].toFixed(1));
+    }
+    if (best !== sparkIdx) { sparkIdx = best; tip.innerHTML = sparkTipHtml(g, pts, best); }
   };
   document.addEventListener('mouseover', e => {
     const el = e.target.closest(HOVER);
