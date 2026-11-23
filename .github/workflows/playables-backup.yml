@@ -1,0 +1,37 @@
+name: Резервная копия Playables
+
+on:
+  schedule:
+    - cron: "11 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: playables-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Сохранить ежедневную точку восстановления
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="backup/$(TZ=Europe/Moscow date +%F)"
+          if git ls-remote --exit-code --refs origin "refs/tags/$tag"; then
+            echo "Резервная копия за сегодня уже существует: $tag"
+            exit 0
+          else
+            test "$?" -eq 2
+          fi
+          git cat-file -e HEAD:docs/data.json
+          test -n "$(git ls-tree -r --name-only HEAD data/snapshots)"
+          git push origin "HEAD:refs/tags/$tag"
