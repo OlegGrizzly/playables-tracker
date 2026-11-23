@@ -1,0 +1,13 @@
+name: Diagnose catalogue sorting
+on:
+  push:
+    branches: [diagnose-catalog-sorts]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 tracker/diagnose_sorts.py
