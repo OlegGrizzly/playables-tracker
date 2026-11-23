@@ -192,7 +192,7 @@ def build(data_dir: Path) -> dict:
         # d1
         d1 = None
         prev = value_at_or_before(series, t_date - dt.timedelta(days=1))
-        if prev and prev[0] == t_date - dt.timedelta(days=1):
+        if t_date == last and prev and prev[0] == t_date - dt.timedelta(days=1):
             d1 = t_val - prev[1]
 
         # rate / growth
@@ -303,6 +303,7 @@ def build(data_dir: Path) -> dict:
     games_out.sort(key=lambda g: (g["hot"] is None, -(g["hot"] or 0)))
     return {
         "updated": dates[-1],
+        "measured": sum(series[-1][0] == last for series in obs.values()),
         "dates": dates,
         "weights": {"rate": W_RATE, "peer": W_PEER, "mom": W_MOM},
         "curve": curve,

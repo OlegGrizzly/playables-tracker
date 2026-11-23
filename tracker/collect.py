@@ -286,6 +286,9 @@ def update_games_meta(path: Path, games: list[dict], date: str,
                 e["added"] = date
         if g["id"] in added and (not e.get("added") or added[g["id"]] < e["added"]):
             e["added"] = added[g["id"]]
+        if e.get("last_seen", date) > date:
+            e["first_seen"] = min(e.get("first_seen", date), date)
+            continue
         for field in ("name", "publisher", "genre", "published", "icon"):
             if g[field] or not preserve_missing or field not in e:
                 e[field] = g[field]
@@ -311,69 +314,76 @@ def load_added(html: str, new_html: str | None) -> dict[str, str]:
         return {}
 
 
-def check_coverage(games: list[dict], previous_ids: set[str], source: str) -> None:
-    ids = {game["id"] for game in games}
-    if len(ids) < MIN_GAMES:
-        raise ParseError(f"Каталог {source} слишком мал: {len(ids)} игр")
-    overlap = len(ids & previous_ids)
-    if overlap < len(previous_ids) * MIN_PREVIOUS_COVERAGE:
-        raise ParseError(f"{source}: всего {len(ids)} игр, из них {overlap} "
-                         f"из {len(previous_ids)} игр предыдущего снимка")
+def merge_observations(data_dir, date, games, source, added=None):
+    directory = data_dir / "snapshots"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{date}.csv"
+    rows = {}
+    if path.exists():
+        with path.open(encoding="utf-8", newline="") as f:
+            rows = {r["id"]: (int(r["plays"]), r.get("source") or "playables.games")
+                    for r in csv.DictReader(f)}
+    original = rows.copy()
+    for g in games:
+        gid = g["id"]
+        if source == "youtube" or rows.get(gid, (None, None))[1] != "youtube":
+            rows[gid] = (g["plays"], source)
+    changed = original != rows
+    meta, new = update_games_meta(data_dir / "games.json", games, date, added,
+                                  preserve_missing=True)
+    if changed:
+        lines = ["id,plays,source"]
+        lines.extend(f"{gid},{plays},{src}" for gid, (plays, src) in sorted(rows.items()))
+        atomic_write(path, "\n".join(lines) + "\n")
+    return {"date": date, "changed": changed, "games": len(rows), "new": new, "meta": meta}
 
 
 def collect(data_dir: Path, html: str | None = None, today: str | None = None,
             new_html: str | None = None) -> dict:
-    snap_dir = data_dir / "snapshots"
-    latest = latest_snapshot_date(snap_dir)
-    network = html is None
-    youtube = network
-    run_date = today or dt.datetime.now(dt.timezone.utc).date().isoformat()
-    previous_ids = set()
-    if network and latest:
-        with (snap_dir / f"{latest}.csv").open(encoding="utf-8", newline="") as snapshot:
-            previous_ids = {row["id"] for row in csv.DictReader(snapshot)}
-        if run_date <= latest:
-            print(f"Снимок за {latest} уже сохранён.")
-            return {"date": latest, "changed": False, "games": len(previous_ids), "new": []}
-
-    if youtube:
+    date = today or dt.datetime.now(dt.timezone.utc).date().isoformat()
+    results = []
+    latest = latest_snapshot_date(data_dir / "snapshots")
+    if html is None:
         try:
             games = fetch_youtube_catalog()
-            check_coverage(games, previous_ids, "YouTube")
-        except (RuntimeError, ValueError, KeyError, TypeError, AttributeError) as exc:
-            print(f"Прямой сбор отклонён: {exc}. Проверяю playables.games.", file=sys.stderr)
-            youtube = False
-            html = fetch(SOURCE_URL)
-
-    if youtube:
-        data_date = run_date
-        added = {}
+            if not games:
+                raise ParseError("Пустой ответ YouTube")
+        except (RuntimeError, ValueError, KeyError, TypeError, AttributeError, OSError) as exc:
+            print(f"YouTube: {exc}", file=sys.stderr)
+        else:
+            results.append(merge_observations(data_dir, date, games, "youtube"))
+            print(f"YouTube: {len(games)} замеров за {date}")
+    try:
+        page = html if html is not None else fetch(SOURCE_URL)
+        source_date, games = parse_catalog(page)
+        if html is not None and not source_date:
+            source_date = date
+        if not source_date or source_date > date:
+            raise ParseError("Некорректная дата playables.games")
+    except (RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
+        if not results:
+            raise
+        print(f"playables.games: {exc}", file=sys.stderr)
     else:
-        data_date, games = parse_catalog(html)
-        if not data_date:
-            if network:
-                raise ParseError("playables.games не указал дату резервного снимка")
-            data_date = run_date
-            print(f"Метка «updated» не найдена, использую дату запуска {data_date}", file=sys.stderr)
-        if latest and (data_date < latest or (network and data_date == latest)):
-            print(f"Источник отдаёт данные за {data_date}, а у нас уже есть {latest} — пропускаю.")
-            return {"date": latest if network else data_date, "changed": False,
-                    "games": len(previous_ids) if network else len(games), "new": []}
-        if network:
-            check_coverage(games, previous_ids, "playables.games")
-        added = load_added(html, new_html) if (network or new_html is not None) else {}
-
-    snap_dir.mkdir(parents=True, exist_ok=True)
-    meta, new_ids = update_games_meta(
-        data_dir / "games.json", games, data_date, added, preserve_missing=youtube,
-    )
-    changed = write_snapshot(snap_dir / f"{data_date}.csv", games)
-    active = sum(1 for g in games if not g["removed"])
-    print(
-        f"Снимок {data_date}: игр {len(games)} (активных {active}), "
-        f"новых в базе {len(new_ids)}, файл {'обновлён' if changed else 'без изменений'}"
-    )
-    return {"date": data_date, "changed": changed, "games": len(games), "new": new_ids, "meta": meta}
+        if html is not None and latest and source_date < latest:
+            return {"date": latest, "changed": False, "games": len(games), "new": []}
+        path = data_dir / "snapshots" / f"{source_date}.csv"
+        # Старые двухколоночные снимки уже содержат этот каталог целиком.
+        legacy = False
+        if path.exists() and source_date < date:
+            with path.open() as f:
+                legacy = f.readline().strip() == "id,plays"
+        if legacy:
+            results.append({"date": source_date, "changed": False, "games": len(games), "new": []})
+        else:
+            added = load_added(page, new_html) if (html is None or new_html is not None) else {}
+            results.append(merge_observations(data_dir, source_date, games, "playables.games", added))
+        print(f"playables.games: {len(games)} строк за {source_date}")
+    result = max(results, key=lambda r: r["date"]).copy()
+    result["date"] = max(result["date"], latest or "")
+    result["changed"] = any(r["changed"] for r in results)
+    result["new"] = sorted({gid for r in results for gid in r["new"]})
+    return result
 
 
 def main() -> int:

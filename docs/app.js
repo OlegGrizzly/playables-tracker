@@ -751,14 +751,14 @@ async function init() {
   for (const g of S.games) S.byId.set(g.id, g);
 
   const n = data.dates.length;
-  $('#meta').textContent = `Данные на ${fmtDate(data.updated)} · снимков: ${n} (с ${fmtDate(data.dates[0])}) · игр в каталоге: ${S.games.filter(g => !g.rm).length}`;
+  $('#meta').textContent = `Данные на ${fmtDate(data.updated)} · игр с замером: ${data.measured ?? data.games.filter(g => g.s.at(-1) != null).length} · снимков: ${n} (с ${fmtDate(data.dates[0])}) · игр в каталоге: ${S.games.filter(g => !g.rm).length}`;
   showRunStatus();
   if (n < 11) {
     const w = $('#warn');
     w.hidden = false;
     w.innerHTML = `<b>История копится: ${n} ${plural(n, 'снимок', 'снимка', 'снимков')}.</b> «В день» считается по реальному приросту между снимками; YouTube округляет плеи, поэтому у больших игр темп пока грубый: <b>&lt;1M</b> значит, что число за день не изменилось. Окно до 7 дней сделает его точнее, ускорение появится примерно через 10 дней. Сравнение с ровесниками работает сразу.`;
   }
-  $('#foot').textContent = `Источник: playables.games (публичный каталог YouTube Playables). Веса Hot: темп ${data.weights.rate}, ровесники ${data.weights.peer}, ускорение ${data.weights.mom}.`;
+  $('#foot').textContent = `Источники: YouTube Playables и playables.games. Веса Hot: темп ${data.weights.rate}, ровесники ${data.weights.peer}, ускорение ${data.weights.mom}.`;
 
   const genres = [...new Set(S.games.map(g => g.g).filter(Boolean))].sort();
   $('#fGenre').insertAdjacentHTML('beforeend', genres.map(g => `<option>${esc(g)}</option>`).join(''));
