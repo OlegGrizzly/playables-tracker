@@ -1,9 +1,9 @@
 {
- "run_at": "2026-11-25T02:38:17+00:00",
+ "run_at": "2026-11-25T03:23:28+00:00",
  "ok": true,
  "collect": "success",
  "alerts": "success",
  "snapshot": "2026-11-25",
- "trigger": "cron",
- "run_url": "https://github.com/OlegGrizzly/playables-tracker/actions/runs/45534347563"
+ "trigger": "manual",
+ "run_url": "https://github.com/OlegGrizzly/playables-tracker/actions/runs/45539608151"
 }
