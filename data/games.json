@@ -423,11 +423,11 @@
   "added": "2026-11-17",
   "first_seen": "2026-11-17",
   "genre": "Brain & Puzzle",
-  "icon": "https://yt3.ggpht.com/QTrVVsKhQzdzWMuYz4K0JJLCq8Loo-KXh3atHbGX744A4gaZ0hh7_GtreqkFjwSZLfNpQslnJfexQA",
-  "last_seen": "2026-11-27",
+  "icon": "https://yt3.ggpht.com/21HBDKpwMLkm_EIon4sgoMt-6z4UzzL9NxU0YXxO8FEDdUkmZ252Ziq7clzE73LUsap8c0OVwKE6=s512-rw-nd-v1",
+  "last_seen": "2026-11-28",
   "name": "Sudoku",
   "published": "2026-11-16",
-  "publisher": "Aged Studio",
+  "publisher": "Aged Studio Limited",
   "removed": null
  },
  "Ugkx-qxseeW4ZjfcVvuS4QSAxx-KqzqlP5VF": {
@@ -22145,6 +22145,17 @@
   "publisher": "Vellichor Games",
   "removed": null
  },
+ "UgkxfxtvVyNc9NGSexDPmMYFqLZT51g-Mkcv": {
+  "added": "2026-11-28",
+  "first_seen": "2026-11-28",
+  "genre": null,
+  "icon": "https://yt3.ggpht.com/T5QVcSJg0B19NjHd-Xt0MIiG03xyyyAdQga0kmhzfTyDAXGVDqfxGU8XOpmANpimfNVhN5ts6W5CJA=s512-rw-nd-v1",
+  "last_seen": "2026-11-28",
+  "name": "Free Rings",
+  "published": "2026-11-27",
+  "publisher": "Pupu Games",
+  "removed": null
+ },
  "Ugkxg-yHFoKtlbKwssZjDjo0l3B2c5FqlFd8": {
   "added": "2026-11-09",
   "first_seen": "2026-11-09",
@@ -24170,8 +24181,8 @@
   "added": "2026-11-20",
   "first_seen": "2026-11-20",
   "genre": "Simulation",
-  "icon": "https://yt3.ggpht.com/ZWJRGgO9lon7p0-HfmSQv-Dbrs9B8JEjH0Mbzm3IiUGZHagLCIdGNUCIEbGK_ja5krT7Y8B7rEhx1AU",
-  "last_seen": "2026-11-27",
+  "icon": "https://yt3.ggpht.com/TIT0kH12dRoCRLdQ2qqOfpec8t7PJoEupOzT6aNTxL8vC20RnVD-ZjK0iLTWACvfFnSm5b_ouu9sDrg=s512-rw-nd-v1",
+  "last_seen": "2026-11-28",
   "name": "Needle Rush",
   "published": "2026-11-19",
   "publisher": "HG Point",
